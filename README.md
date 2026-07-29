@@ -32,6 +32,19 @@ cargo run -p prefrontald        # scans ~/Projects, serves http://127.0.0.1:7320
 cargo run -p prefrontal-cli --  status   # same scan, in your terminal
 ```
 
+The `prefrontal` binary also carries `health` (rot check), `timeline` (where was I),
+`find <terms>` (full-text over code/docs/commits), and `mcp` — an MCP stdio server
+so agents can ask the same questions:
+
+```sh
+claude mcp add prefrontal -- /path/to/prefrontal mcp
+# or drop an .mcp.json next to your projects root:
+# { "mcpServers": { "prefrontal": { "command": "/path/to/prefrontal", "args": ["mcp"] } } }
+```
+
+Tools: `list_projects` · `project_status` · `where_was_i` · `search` ·
+`list_docs` · `read_doc` · `write_doc` (auto-commits, never pushes).
+
 Zero config needed. To customize roots, thresholds, or per-project overrides:
 copy `config.example.toml` to `~/.config/prefrontal/config.toml`.
 

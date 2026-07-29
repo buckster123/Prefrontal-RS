@@ -119,3 +119,8 @@ Everything below is computed, never hand-maintained:
   ~17s build / ~3ms queries). `/api/search`, live search UI under the filter
   box, `prefrontal find`. **Still open in phase 3:** tree-sitter symbol cards
   (structured fn/struct/class search) — full-text already finds symbols by text.
+- **2026-07-29** — Phase 4 "Agents" complete: `prefrontal mcp` — hand-rolled MCP
+  stdio server (newline-delimited JSON-RPC, no SDK dep), 7 tools
+  (`list_projects`, `project_status`, `where_was_i`, `search`, `list_docs`,
+  `read_doc`, `write_doc`), daemon-independent (direct scan, 10s cache).
+  Registered for Claude Code via `~/Projects/.mcp.json` (release binary).

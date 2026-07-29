@@ -1,3 +1,5 @@
+mod mcp;
+
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use prefrontal_core::{scan_all, Config};
@@ -29,11 +31,16 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    /// Serve the MCP stdio server (for agents: claude mcp add prefrontal -- prefrontal mcp)
+    Mcp,
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let cfg = Config::load()?;
+    if matches!(cli.command, Command::Mcp) {
+        return mcp::run(cfg); // scans lazily per tool call, not up front
+    }
     let projects = scan_all(&cfg);
 
     match cli.command {
@@ -57,6 +64,7 @@ fn main() -> Result<()> {
         }
         Command::Timeline => print_timeline(&projects),
         Command::Find { query, limit } => find(&projects, &query.join(" "), limit)?,
+        Command::Mcp => unreachable!("handled before the scan"),
     }
     Ok(())
 }
