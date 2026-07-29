@@ -117,14 +117,29 @@ pub struct DocWriteResult {
     pub detail: Option<String>,
 }
 
+/// One full-text search result.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SearchHit {
+    pub project: String,
+    /// File path for code/doc hits; abbreviated commit id for commit hits.
+    pub path: String,
+    /// "code" | "doc" | "commit"
+    pub kind: String,
+    /// 1-based line of the first term match, for file hits.
+    pub line: Option<u32>,
+    pub snippet: String,
+    pub score: f32,
+}
+
 /// Frames pushed over the daemon's WebSocket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
     /// Full state, sent on connect and after a full rescan.
     Snapshot { projects: Vec<Project> },
-    /// A single project changed on disk.
-    ProjectChanged { project: Project },
+    /// A single project changed on disk. (Boxed: keeps the enum small — this
+    /// variant is ~10× the size of the others; serde sees straight through.)
+    ProjectChanged { project: Box<Project> },
     /// A project directory disappeared from the root.
     ProjectRemoved { path: String },
 }

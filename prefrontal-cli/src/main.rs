@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use prefrontal_core::{scan_all, Config};
 use prefrontal_protocol::{Activity, HealthFlag, Project};
@@ -22,6 +22,13 @@ enum Command {
     Health,
     /// Where was I — recent commits across all projects, grouped by day
     Timeline,
+    /// Full-text search across code, docs, and commit messages
+    Find {
+        /// Search terms
+        query: Vec<String>,
+        #[arg(long, default_value_t = 20)]
+        limit: usize,
+    },
 }
 
 fn main() -> Result<()> {
@@ -49,6 +56,36 @@ fn main() -> Result<()> {
             }
         }
         Command::Timeline => print_timeline(&projects),
+        Command::Find { query, limit } => find(&projects, &query.join(" "), limit)?,
+    }
+    Ok(())
+}
+
+fn find(projects: &[Project], query: &str, limit: usize) -> Result<()> {
+    use prefrontal_core::search as ps;
+    if query.trim().is_empty() {
+        println!("give me something to look for");
+        return Ok(());
+    }
+    let dir = ps::default_index_dir().context("no data dir")?;
+    let (index, fields) = ps::open_readonly(&dir)?;
+    let dirs = projects
+        .iter()
+        .map(|p| (p.name.clone(), std::path::PathBuf::from(&p.path)))
+        .collect();
+    let hits = ps::search(&index, fields, query, limit, &dirs)?;
+    if hits.is_empty() {
+        println!("nothing found for \"{query}\"");
+        return Ok(());
+    }
+    for h in hits {
+        let loc = match (h.kind.as_str(), h.line) {
+            ("commit", _) => format!("commit {}", h.path),
+            (_, Some(line)) => format!("{}:{}", h.path, line),
+            _ => h.path.clone(),
+        };
+        println!("{:<24} {:<6} {}", h.project, h.kind, loc);
+        println!("{:24} {:6} └ {}", "", "", h.snippet);
     }
     Ok(())
 }
@@ -92,8 +129,8 @@ fn print_timeline(projects: &[Project]) {
 
 fn print_table(projects: &[Project]) {
     println!(
-        "{:<28} {:<8} {:<12} {:<24} {:>5} {:>8}  {}",
-        "PROJECT", "STATE", "LANGS", "BRANCH", "DIRTY", "TOUCHED", "FLAGS"
+        "{:<28} {:<8} {:<12} {:<24} {:>5} {:>8}  FLAGS",
+        "PROJECT", "STATE", "LANGS", "BRANCH", "DIRTY", "TOUCHED"
     );
     for p in projects {
         let branch = p.git.as_ref().and_then(|g| g.branch.clone()).unwrap_or_default();

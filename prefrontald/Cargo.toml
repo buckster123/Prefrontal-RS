@@ -10,6 +10,7 @@ prefrontal-protocol = { workspace = true }
 prefrontal-core = { workspace = true }
 tokio = { workspace = true }
 axum = { version = "0.8", features = ["ws"] }
+serde = { workspace = true }
 serde_json = { workspace = true }
 anyhow = { workspace = true }
 tracing = "0.1"

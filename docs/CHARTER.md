@@ -111,3 +111,11 @@ Everything below is computed, never hand-maintained:
   comrak server-side render), project panel UI (browse/read/edit/create, Ctrl+S),
   pathspec-scoped auto-commit `[prefrontal] note: <path>` — first note committed
   through the flow was `notes/phase-3-ideas.md`, by the feature itself.
+- **2026-07-29** — Phase 2 polish: `/raw` asset route (docs show their images),
+  relative .md links navigate in-panel.
+- **2026-07-29** — Phase 3 "Recall" core shipped: tantivy full-text over code +
+  docs + commit messages (index at `~/.local/share/prefrontal/index`, built in
+  background at startup, kept live by the watcher; ~23k docs / 47 projects /
+  ~17s build / ~3ms queries). `/api/search`, live search UI under the filter
+  box, `prefrontal find`. **Still open in phase 3:** tree-sitter symbol cards
+  (structured fn/struct/class search) — full-text already finds symbols by text.

@@ -13,16 +13,19 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use prefrontal_core::search::SearchIndex;
 use prefrontal_core::{scan_all, Config};
-use prefrontal_protocol::{DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project};
+use prefrontal_protocol::{DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project, SearchHit};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 pub struct AppState {
     pub cfg: Config,
     pub projects: RwLock<Vec<Project>>,
     pub tx: broadcast::Sender<Event>,
+    /// None when the index couldn't be opened — search degrades, nothing else does.
+    pub search: Option<Arc<SearchIndex>>,
 }
 
 #[tokio::main]
@@ -44,16 +47,29 @@ async fn main() -> Result<()> {
     };
     info!("initial scan: {} projects", initial.len());
 
+    let search = match prefrontal_core::search::default_index_dir() {
+        Some(dir) => match prefrontal_core::search::open(&dir) {
+            Ok(s) => Some(Arc::new(s)),
+            Err(e) => {
+                warn!("search index unavailable ({e:#}) — /api/search disabled");
+                None
+            }
+        },
+        None => None,
+    };
+
     let (tx, _) = broadcast::channel(64);
-    let state = Arc::new(AppState { cfg, projects: RwLock::new(initial), tx });
+    let state = Arc::new(AppState { cfg, projects: RwLock::new(initial), tx, search });
 
     if let Err(e) = watch::spawn(state.clone()) {
         error!("file watcher failed ({e:#}) — dashboard is static; POST /api/rescan to refresh");
     }
+    tokio::spawn(build_index(state.clone()));
 
     let app = Router::new()
         .route("/api/projects", get(list_projects))
         .route("/api/rescan", post(rescan))
+        .route("/api/search", get(search_handler))
         .route("/api/docs/{project}", get(list_docs))
         .route("/api/doc/{project}/{*path}", get(read_doc).put(write_doc))
         .route("/raw/{project}/{*path}", get(raw_asset))
@@ -83,6 +99,71 @@ async fn rescan(State(state): State<Arc<AppState>>) -> Json<Vec<Project>> {
     *state.projects.write().await = fresh.clone();
     let _ = state.tx.send(Event::Snapshot { projects: fresh.clone() });
     Json(fresh)
+}
+
+/// Full index build, once, in the background — the watcher keeps it fresh after.
+async fn build_index(state: Arc<AppState>) {
+    let Some(search) = state.search.clone() else { return };
+    let projects: Vec<(String, String)> = state
+        .projects
+        .read()
+        .await
+        .iter()
+        .map(|p| (p.name.clone(), p.path.clone()))
+        .collect();
+    let total = projects.len();
+    let started = std::time::Instant::now();
+    let docs = tokio::task::spawn_blocking(move || {
+        let mut docs = 0usize;
+        for (name, path) in projects {
+            match search.reindex_project(&name, std::path::Path::new(&path)) {
+                Ok(n) => docs += n,
+                Err(e) => warn!("indexing {name} failed: {e:#}"),
+            }
+        }
+        docs
+    })
+    .await
+    .unwrap_or(0);
+    info!(
+        "search index ready — {docs} documents across {total} projects in {:.1}s",
+        started.elapsed().as_secs_f32()
+    );
+}
+
+#[derive(serde::Deserialize)]
+struct SearchParams {
+    q: String,
+    #[serde(default = "default_limit")]
+    limit: usize,
+}
+fn default_limit() -> usize {
+    30
+}
+
+async fn search_handler(
+    axum::extract::Query(params): axum::extract::Query<SearchParams>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<SearchHit>>, ApiError> {
+    let Some(search) = state.search.clone() else {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "search index unavailable".into()));
+    };
+    let dirs: std::collections::HashMap<String, std::path::PathBuf> = state
+        .projects
+        .read()
+        .await
+        .iter()
+        .map(|p| (p.name.clone(), std::path::PathBuf::from(&p.path)))
+        .collect();
+    let limit = params.limit.min(100);
+    let q = params.q.clone();
+    let hits = tokio::task::spawn_blocking(move || {
+        prefrontal_core::search::search(&search.index, search.fields, &q, limit, &dirs)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
+    Ok(Json(hits))
 }
 
 type ApiError = (StatusCode, String);

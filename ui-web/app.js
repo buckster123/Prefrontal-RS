@@ -191,6 +191,57 @@ function card(p) {
   return c;
 }
 
+/* ---------- content search ---------- */
+
+let searchTimer = null;
+let searchSeq = 0;
+
+function scheduleSearch() {
+  clearTimeout(searchTimer);
+  const q = document.getElementById("filter").value.trim();
+  if (q.length < 3) {
+    document.getElementById("search-results").hidden = true;
+    return;
+  }
+  searchTimer = setTimeout(() => runSearch(q), 250);
+}
+
+async function runSearch(q) {
+  const seq = ++searchSeq;
+  try {
+    const res = await fetch(`/api/search?q=${encodeURIComponent(q)}`);
+    if (!res.ok || seq !== searchSeq) return; // stale response — a newer query is in flight
+    renderHits(await res.json());
+  } catch {
+    /* daemon gone; the conn dot already says so */
+  }
+}
+
+function renderHits(hits) {
+  const section = document.getElementById("search-results");
+  section.hidden = hits.length === 0;
+  document.getElementById("search-count").textContent = hits.length ? `(${hits.length})` : "";
+  const list = document.getElementById("hit-list");
+  list.replaceChildren();
+  for (const h of hits) {
+    const isDoc = h.kind === "doc";
+    const row = el("div", "hit" + (isDoc ? " openable" : ""));
+    const top = el("div", "top");
+    const loc =
+      h.kind === "commit" ? `commit ${h.path}` : h.line ? `${h.path}:${h.line}` : h.path;
+    top.append(el("span", "proj", h.project), el("span", "kind", h.kind), el("span", "loc", loc));
+    row.append(top, el("div", "snippet", h.snippet));
+    if (isDoc) {
+      row.title = "open in the docs panel";
+      row.onclick = async () => {
+        await openPanel(h.project);
+        openDoc(h.path);
+      };
+    }
+    list.append(row);
+  }
+}
+
 /* ---------- project panel (docs & notes) ---------- */
 
 const panel = {
@@ -301,11 +352,15 @@ function fixupDocLinks(container, project, docPath) {
   }
 }
 
+let docSeq = 0;
+
 async function openDoc(path) {
+  const seq = ++docSeq;
   try {
     const res = await fetch(
       `/api/doc/${encodeURIComponent(panel.project)}/${path.split("/").map(encodeURIComponent).join("/")}`
     );
+    if (seq !== docSeq) return; // a newer openDoc superseded this one
     if (!res.ok) {
       status(await res.text(), "warn");
       return;
@@ -480,7 +535,10 @@ function scheduleReconnect() {
 }
 
 async function boot() {
-  document.getElementById("filter").addEventListener("input", render);
+  document.getElementById("filter").addEventListener("input", () => {
+    render();
+    scheduleSearch();
+  });
   document.getElementById("health").addEventListener("toggle", (e) => {
     if (e.isTrusted) healthTouched = true;
   });

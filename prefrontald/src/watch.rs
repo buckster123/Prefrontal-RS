@@ -181,7 +181,16 @@ async fn rescan_one(state: &Arc<AppState>, dir: PathBuf) {
             projects.sort_by_key(|p| std::cmp::Reverse(p.last_touched_unix));
             drop(projects);
             debug!("project changed: {}", project.name);
-            let _ = state.tx.send(WireEvent::ProjectChanged { project });
+            if let Some(search) = state.search.clone() {
+                let name = project.name.clone();
+                let pdir = dir.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = search.reindex_project(&name, &pdir) {
+                        debug!("reindex {name} failed: {e:#}");
+                    }
+                });
+            }
+            let _ = state.tx.send(WireEvent::ProjectChanged { project: Box::new(project) });
         }
         None => {
             let path = dir.to_string_lossy().to_string();
@@ -191,6 +200,11 @@ async fn rescan_one(state: &Arc<AppState>, dir: PathBuf) {
             if projects.len() != before {
                 drop(projects);
                 info!("project removed: {path}");
+                if let Some(search) = state.search.clone() {
+                    if let Some(name) = dir.file_name().map(|n| n.to_string_lossy().to_string()) {
+                        tokio::task::spawn_blocking(move || search.remove_project(&name).ok());
+                    }
+                }
                 let _ = state.tx.send(WireEvent::ProjectRemoved { path });
             }
         }

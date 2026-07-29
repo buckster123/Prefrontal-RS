@@ -110,6 +110,37 @@ body {
 }
 #filter:focus { outline: 2px solid var(--act-active); outline-offset: -1px; }
 
+/* ---------- content search results ---------- */
+.search-results {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.search-results h2 {
+  font-size: 13px; font-weight: 650; color: var(--ink-2);
+  margin-bottom: 8px;
+}
+.search-results .count { color: var(--muted); font-weight: 400; }
+.hit-list { display: flex; flex-direction: column; gap: 7px; max-height: 44vh; overflow-y: auto; }
+.hit { font-size: 12.5px; line-height: 1.5; }
+.hit .top { display: flex; gap: 8px; align-items: baseline; flex-wrap: wrap; }
+.hit .proj { font-weight: 650; }
+.hit .kind {
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 0 7px; font-size: 10.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+.hit .loc { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; }
+.hit .snippet {
+  color: var(--muted);
+  padding-left: 14px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hit.openable { cursor: pointer; border-radius: 6px; padding: 2px 6px; margin: -2px -6px; }
+.hit.openable:hover { background: var(--hairline); }
+
 /* ---------- health panel ---------- */
 .health {
   background: var(--surface);

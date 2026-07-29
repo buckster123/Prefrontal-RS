@@ -22,8 +22,13 @@
   </section>
 
   <section class="controls">
-    <input id="filter" type="search" placeholder="filter projects — name, tag, language, tagline…"
+    <input id="filter" type="search" placeholder="filter cards · search code, docs & commits everywhere…"
            autocomplete="off" spellcheck="false">
+  </section>
+
+  <section class="search-results" id="search-results" hidden>
+    <h2>🔎 content hits <span class="count" id="search-count"></span></h2>
+    <div class="hit-list" id="hit-list"></div>
   </section>
 
   <details class="health" id="health" aria-label="needs attention" hidden>
