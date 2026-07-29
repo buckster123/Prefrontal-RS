@@ -1,7 +1,7 @@
 use std::path::Path;
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use prefrontal_protocol::{Activity, GitInfo, HealthFlag, Project};
+use prefrontal_protocol::{Activity, CommitSummary, GitInfo, HealthFlag, Project};
 
 use crate::config::Config;
 
@@ -45,7 +45,7 @@ pub fn is_ignored(name: &str, cfg: &Config) -> bool {
 
 /// Scan one project directory — the watcher's per-change unit of work.
 pub fn scan_project(dir: &Path, name: String, cfg: &Config) -> Project {
-    let git = git_info(dir);
+    let git = git_info(dir, cfg);
     let ovr = cfg.overrides.get(&name);
 
     let dir_mtime = std::fs::metadata(dir)
@@ -118,7 +118,7 @@ fn derive_activity(last_touched_unix: i64, cfg: &Config) -> Activity {
     }
 }
 
-fn git_info(dir: &Path) -> Option<GitInfo> {
+fn git_info(dir: &Path, cfg: &Config) -> Option<GitInfo> {
     if !dir.join(".git").exists() {
         return None;
     }
@@ -130,19 +130,45 @@ fn git_info(dir: &Path) -> Option<GitInfo> {
         .flatten()
         .map(|n| n.shorten().to_string());
 
-    let (last_commit_unix, commit_count) = match repo.head_commit() {
+    // One ancestry pass: count everything, collect the timeline window.
+    // No early break — merges make the walk only roughly time-ordered.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    let cutoff = now - cfg.timeline.days as i64 * 86_400;
+    let (last_commit_unix, commit_count, recent_commits) = match repo.head_commit() {
         Ok(commit) => {
             let time = commit.time().ok().map(|t| t.seconds);
-            let count = commit
-                .id()
-                .ancestors()
-                .all()
-                .ok()
-                .map(|walk| walk.filter_map(Result::ok).count() as u32);
-            (time, count)
+            let mut count = 0u32;
+            let mut recent: Vec<CommitSummary> = Vec::new();
+            if let Ok(walk) = commit.id().ancestors().all() {
+                for info in walk.filter_map(Result::ok) {
+                    count += 1;
+                    let Ok(c) = info.object() else { continue };
+                    let Ok(t) = c.time().map(|t| t.seconds) else { continue };
+                    if t < cutoff {
+                        continue;
+                    }
+                    let summary = c
+                        .message()
+                        .ok()
+                        .map(|m| m.summary().to_string())
+                        .unwrap_or_default();
+                    let full = info.id.to_string();
+                    recent.push(CommitSummary {
+                        id: full.chars().take(8).collect(),
+                        summary,
+                        time_unix: t,
+                    });
+                }
+            }
+            recent.sort_by_key(|c| std::cmp::Reverse(c.time_unix));
+            recent.truncate(cfg.timeline.max_per_project as usize);
+            (time, Some(count), recent)
         }
         // Unborn HEAD — a repo someone `git init`ed and never committed to.
-        Err(_) => (None, Some(0)),
+        Err(_) => (None, Some(0), Vec::new()),
     };
 
     let remote = repo
@@ -156,7 +182,7 @@ fn git_info(dir: &Path) -> Option<GitInfo> {
         .and_then(|p| p.into_index_worktree_iter(Vec::new()).ok())
         .map(|iter| iter.filter_map(Result::ok).count() as u32);
 
-    Some(GitInfo { branch, last_commit_unix, dirty_files, commit_count, remote })
+    Some(GitInfo { branch, last_commit_unix, dirty_files, commit_count, remote, recent_commits })
 }
 
 /// Manifest-based detection; checks the project root and one level down

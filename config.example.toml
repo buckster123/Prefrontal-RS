@@ -13,6 +13,10 @@ warm_days = 30       # → "warm"
 cold_days = 180      # → "cold", beyond → "parked"
 dirty_pile = 10      # uncommitted files at/above this → health flag
 
+[timeline]
+days = 14                 # how far back "where was I" looks
+max_per_project = 30      # cap so one rebase-heavy repo can't flood the view
+
 [server]
 bind = "127.0.0.1:7320"   # "PFC" on a phone keypad
 ui_dir = "ui-web"         # static assets; relative to CWD or absolute

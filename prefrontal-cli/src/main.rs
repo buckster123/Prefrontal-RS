@@ -20,6 +20,8 @@ enum Command {
     },
     /// Only projects with health flags (rot check)
     Health,
+    /// Where was I — recent commits across all projects, grouped by day
+    Timeline,
 }
 
 fn main() -> Result<()> {
@@ -46,8 +48,46 @@ fn main() -> Result<()> {
                 }
             }
         }
+        Command::Timeline => print_timeline(&projects),
     }
     Ok(())
+}
+
+fn print_timeline(projects: &[Project]) {
+    use chrono::{DateTime, Datelike, Local};
+
+    let mut entries: Vec<(&str, &prefrontal_protocol::CommitSummary)> = projects
+        .iter()
+        .flat_map(|p| {
+            p.git
+                .iter()
+                .flat_map(|g| g.recent_commits.iter())
+                .map(move |c| (p.name.as_str(), c))
+        })
+        .collect();
+    entries.sort_by_key(|(_, c)| std::cmp::Reverse(c.time_unix));
+    if entries.is_empty() {
+        println!("no commits in the timeline window");
+        return;
+    }
+
+    let today = Local::now().date_naive();
+    let mut day = None;
+    for (project, c) in entries {
+        let Some(dt) = DateTime::from_timestamp(c.time_unix, 0) else { continue };
+        let local: DateTime<Local> = dt.into();
+        let date = local.date_naive();
+        if day != Some(date) {
+            day = Some(date);
+            let label = match (today - date).num_days() {
+                0 => "today".to_string(),
+                1 => "yesterday".to_string(),
+                _ => format!("{} {} {}", local.weekday(), date.day(), local.format("%b")),
+            };
+            println!("\n{label}");
+        }
+        println!("  {}  {:<24} {}", local.format("%H:%M"), project, c.summary);
+    }
 }
 
 fn print_table(projects: &[Project]) {

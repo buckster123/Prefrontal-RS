@@ -28,6 +28,8 @@ const FLAG_VIEW = {
 let projects = [];
 // once the user opens/closes the drawer themselves, stop auto-managing it
 let healthTouched = false;
+let wsRetryMs = 1000;
+let wsRetryTimer = null;
 
 function flagText(f) {
   const v = FLAG_VIEW[f.flag] ?? { label: f.flag, icon: "•", cls: "warning" };
@@ -98,6 +100,61 @@ function renderHealth(list) {
   }
 }
 
+function dayLabel(unix) {
+  const d = new Date(unix * 1000);
+  const today = new Date();
+  const midnight = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  const daysBack = Math.floor((midnight - new Date(d.getFullYear(), d.getMonth(), d.getDate())) / 86400000);
+  if (daysBack <= 0) return "today";
+  if (daysBack === 1) return "yesterday";
+  return d.toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+}
+
+function renderTimeline(list) {
+  const panel = document.getElementById("timeline");
+  const entries = [];
+  for (const p of list)
+    for (const c of p.git?.recent_commits ?? [])
+      entries.push({ project: p.name, ...c });
+  entries.sort((a, b) => b.time_unix - a.time_unix);
+  panel.hidden = entries.length === 0;
+  if (!entries.length) return;
+
+  const projCount = new Set(entries.map((e) => e.project)).size;
+  document.getElementById("timeline-summary").textContent =
+    `where was I — ${entries.length} commits across ${projCount} project${projCount === 1 ? "" : "s"}`;
+
+  // day → runs of consecutive same-project commits
+  const wrap = document.getElementById("tl-list");
+  wrap.replaceChildren();
+  let day = null, dayEl = null, block = null, blockProject = null;
+  for (const e of entries) {
+    const label = dayLabel(e.time_unix);
+    if (label !== day) {
+      day = label;
+      dayEl = el("div", "tl-day");
+      dayEl.append(el("h3", "", label));
+      wrap.append(dayEl);
+      block = null;
+      blockProject = null;
+    }
+    if (e.project !== blockProject) {
+      blockProject = e.project;
+      block = el("div", "tl-block");
+      block.append(el("div", "tl-proj", e.project));
+      dayEl.append(block);
+    }
+    const row = el("div", "tl-commit");
+    const time = new Date(e.time_unix * 1000).toLocaleTimeString(undefined, {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    row.append(el("span", "t", time), el("span", "msg", e.summary));
+    row.title = `${e.id} — ${e.summary}`;
+    block.append(row);
+  }
+}
+
 function card(p) {
   const c = el("article", "card" + (p.activity === "archived" ? " archived" : ""));
 
@@ -145,6 +202,7 @@ function render() {
 
   renderStats();
   renderHealth(list);
+  renderTimeline(list);
 
   const groups = document.getElementById("groups");
   groups.replaceChildren();
@@ -186,20 +244,40 @@ function handleEvent(ev) {
   render();
 }
 
+function connectWS() {
+  wsRetryTimer = null;
+  let ws;
+  try {
+    ws = new WebSocket(`ws://${location.host}/ws`);
+  } catch {
+    scheduleReconnect();
+    return;
+  }
+  ws.onopen = () => {
+    setConn(true);
+    wsRetryMs = 1000;
+  };
+  ws.onmessage = (m) => handleEvent(JSON.parse(m.data));
+  ws.onclose = () => {
+    setConn(false);
+    scheduleReconnect(); // fresh snapshot on reconnect covers anything missed
+  };
+  ws.onerror = () => ws.close();
+}
+
+function scheduleReconnect() {
+  if (wsRetryTimer) return;
+  wsRetryTimer = setTimeout(connectWS, wsRetryMs);
+  wsRetryMs = Math.min(wsRetryMs * 2, 15_000);
+}
+
 async function boot() {
   document.getElementById("filter").addEventListener("input", render);
   document.getElementById("health").addEventListener("toggle", (e) => {
     if (e.isTrusted) healthTouched = true;
   });
-  setInterval(render, 60_000); // keep "Nd ago" honest while the tab sits open
-  try {
-    const ws = new WebSocket(`ws://${location.host}/ws`);
-    ws.onmessage = (m) => handleEvent(JSON.parse(m.data));
-    ws.onopen = () => setConn(true);
-    ws.onclose = ws.onerror = () => setConn(false);
-  } catch {
-    setConn(false);
-  }
+  setInterval(render, 60_000); // keep "Nd ago" and day labels honest while the tab sits open
+  connectWS();
   // REST fallback / first paint even if WS is slow
   try {
     const res = await fetch("/api/projects");

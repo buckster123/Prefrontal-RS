@@ -28,6 +28,20 @@ pub struct GitInfo {
     pub commit_count: Option<u32>,
     /// Fetch URL of `origin`, if any.
     pub remote: Option<String>,
+    /// Commits within the timeline window (config: days/cap), newest first.
+    /// The "where was I" view derives from these — per project, so the
+    /// watcher's per-project deltas keep the merged timeline live for free.
+    #[serde(default)]
+    pub recent_commits: Vec<CommitSummary>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct CommitSummary {
+    /// Abbreviated hex id.
+    pub id: String,
+    /// First line of the commit message.
+    pub summary: String,
+    pub time_unix: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -140,6 +140,42 @@ body {
 }
 .health-row .name { font-weight: 600; min-width: 180px; }
 
+/* ---------- where-was-I timeline ---------- */
+.timeline {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--act-active);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.timeline summary {
+  display: flex; align-items: center; gap: 8px;
+  list-style: none; cursor: pointer;
+  font-size: 13px; font-weight: 650; color: var(--ink-2);
+  user-select: none;
+}
+.timeline summary::-webkit-details-marker { display: none; }
+.timeline .tl-mark { color: var(--act-active); }
+.timeline .chev { margin-left: auto; color: var(--muted); transition: rotate 0.15s; }
+.timeline[open] .chev { rotate: 180deg; }
+.timeline[open] summary { margin-bottom: 10px; }
+.tl-list { max-height: 46vh; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.tl-day > h3 {
+  font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.tl-block {
+  border-left: 2px solid var(--hairline);
+  padding-left: 12px;
+  margin: 0 0 8px 4px;
+}
+.tl-block .tl-proj { font-weight: 650; font-size: 13px; }
+.tl-commit { display: flex; gap: 10px; align-items: baseline; font-size: 12.5px; }
+.tl-commit .t { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tl-commit .msg { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 /* ---------- groups & cards ---------- */
 .group { margin-bottom: 22px; }
 .group > h2 {

@@ -105,3 +105,5 @@ Everything below is computed, never hand-maintained:
 ## Decisions log
 
 - **2026-07-29** — Charter locked (D1–D9). Scaffold created.
+- **2026-07-29** — Phase 1 "Pulse" complete: watcher + WS deltas, health drawer,
+  where-was-I timeline (web + `prefrontal timeline`), WS auto-reconnect.

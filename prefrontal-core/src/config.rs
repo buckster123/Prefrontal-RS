@@ -15,6 +15,7 @@ pub struct Config {
     /// Directory names skipped during scanning.
     pub ignore: Vec<String>,
     pub thresholds: Thresholds,
+    pub timeline: TimelineConfig,
     pub server: ServerConfig,
     pub features: Features,
     /// Keyed by project directory name.
@@ -28,6 +29,15 @@ pub struct Thresholds {
     pub warm_days: u32,
     pub cold_days: u32,
     pub dirty_pile: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct TimelineConfig {
+    /// How far back "where was I" looks.
+    pub days: u32,
+    /// Cap per project so one rebase-heavy repo can't flood the view.
+    pub max_per_project: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -61,6 +71,7 @@ impl Default for Config {
             roots: vec!["~/Projects".into()],
             ignore: vec![".vite".into(), "node_modules".into(), "target".into()],
             thresholds: Thresholds::default(),
+            timeline: TimelineConfig::default(),
             server: ServerConfig::default(),
             features: Features::default(),
             overrides: HashMap::new(),
@@ -71,6 +82,12 @@ impl Default for Config {
 impl Default for Thresholds {
     fn default() -> Self {
         Self { active_days: 7, warm_days: 30, cold_days: 180, dirty_pile: 10 }
+    }
+}
+
+impl Default for TimelineConfig {
+    fn default() -> Self {
+        Self { days: 14, max_per_project: 30 }
     }
 }
 
