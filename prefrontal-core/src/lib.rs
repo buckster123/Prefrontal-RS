@@ -4,6 +4,7 @@ pub mod config;
 pub mod docs;
 pub mod scan;
 pub mod search;
+pub mod symbols;
 
 pub use config::Config;
 pub use docs::{list_docs, read_doc, write_doc};

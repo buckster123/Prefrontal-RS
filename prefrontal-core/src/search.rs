@@ -17,6 +17,7 @@ use tantivy::schema::{Field, Schema, Value, STORED, STRING, TEXT};
 use tantivy::{doc, Index, IndexWriter, TantivyDocument, Term};
 
 use crate::scan::SKIP_DIRS;
+use crate::symbols;
 
 const CODE_EXTENSIONS: &[&str] = &[
     "rs", "py", "js", "ts", "jsx", "tsx", "gd", "c", "h", "cpp", "hpp", "cc", "go", "java",
@@ -35,6 +36,8 @@ pub struct Fields {
     pub kind: Field,
     pub content: Field,
     pub stored_text: Field,
+    /// 1-based declaration line — set on symbol documents only.
+    pub line: Field,
 }
 
 pub struct SearchIndex {
@@ -56,6 +59,7 @@ fn schema() -> (Schema, Fields) {
         kind: b.add_text_field("kind", STRING | STORED),
         content: b.add_text_field("content", TEXT),
         stored_text: b.add_text_field("stored_text", STORED),
+        line: b.add_u64_field("line", STORED),
     };
     (b.build(), fields)
 }
@@ -98,6 +102,22 @@ impl SearchIndex {
         let mut added = 0usize;
         for (rel, kind) in &files {
             let Some(content) = read_indexable(&project_dir.join(rel)) else { continue };
+            if kind == "code" {
+                let ext = rel.rsplit('.').next().unwrap_or_default().to_lowercase();
+                for sym in symbols::extract(&ext, &content) {
+                    // tiny doc per declaration: a name query ranks it far above
+                    // the file it lives in, and the signature ships in-index
+                    writer.add_document(doc!(
+                        self.fields.project => name,
+                        self.fields.path => rel.as_str(),
+                        self.fields.kind => "symbol",
+                        self.fields.content => format!("{} {}", sym.kind, sym.name),
+                        self.fields.stored_text => sym.signature,
+                        self.fields.line => sym.line as u64,
+                    ))?;
+                    added += 1;
+                }
+            }
             writer.add_document(doc!(
                 self.fields.project => name,
                 self.fields.path => rel.as_str(),
@@ -236,13 +256,19 @@ pub fn search(
         let project = get(fields.project);
         let path = get(fields.path);
         let kind = get(fields.kind);
-        let (line, snippet) = if kind == "commit" {
-            (None, get(fields.stored_text))
-        } else {
-            match project_dirs.get(&project) {
+        let (line, snippet) = match kind.as_str() {
+            "commit" => (None, get(fields.stored_text)),
+            "symbol" => {
+                let line = doc
+                    .get_first(fields.line)
+                    .and_then(|v| v.as_u64())
+                    .map(|l| l as u32);
+                (line, get(fields.stored_text))
+            }
+            _ => match project_dirs.get(&project) {
                 Some(dir) => locate_snippet(&dir.join(&path), &terms),
                 None => (None, String::new()),
-            }
+            },
         };
         hits.push(SearchHit { project, path, kind, line, snippet, score });
     }

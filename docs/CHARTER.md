@@ -119,6 +119,11 @@ Everything below is computed, never hand-maintained:
   ~17s build / ~3ms queries). `/api/search`, live search UI under the filter
   box, `prefrontal find`. **Still open in phase 3:** tree-sitter symbol cards
   (structured fn/struct/class search) — full-text already finds symbols by text.
+- **2026-07-29** — Phase 3 complete: symbol cards shipped. **Amendment:** extraction
+  is pure-Rust regex per language (rust/py/js·ts/gd/go/sh), not tree-sitter —
+  tree-sitter's C runtime is exactly the linking pattern D7 avoids; revisit only
+  if precision demands real parsing. ~230k symbol docs (name+kind indexed,
+  signature+line stored); a name query ranks the declaration above its file.
 - **2026-07-29** — Phase 4 "Agents" complete: `prefrontal mcp` — hand-rolled MCP
   stdio server (newline-delimited JSON-RPC, no SDK dep), 7 tools
   (`list_projects`, `project_status`, `where_was_i`, `search`, `list_docs`,
