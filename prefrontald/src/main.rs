@@ -187,8 +187,12 @@ fn render_markdown(raw: &str) -> String {
     opts.extension.strikethrough = true;
     opts.extension.tasklist = true;
     opts.extension.autolink = true;
-    // render.unsafe_ stays false: raw HTML in docs is escaped, not executed
-    comrak::markdown_to_html(raw, &opts)
+    // Raw HTML passes through comrak, then ammonia strips anything active
+    // (scripts, handlers, iframes) while keeping the img/div/table furniture
+    // READMEs actually use for banners. The dashboard origin can write files,
+    // so cloned-from-anywhere docs must never execute in it.
+    opts.render.r#unsafe = true;
+    ammonia::clean(&comrak::markdown_to_html(raw, &opts))
 }
 
 async fn list_docs(

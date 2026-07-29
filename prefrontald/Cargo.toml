@@ -18,3 +18,4 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tower-http = { version = "0.7.0", features = ["fs"] }
 notify = "8.2.0"
 comrak = "0.54.0"
+ammonia = "4.1.4"
