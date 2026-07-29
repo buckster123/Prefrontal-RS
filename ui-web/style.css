@@ -119,8 +119,21 @@ body {
   padding: 12px 14px;
   margin-bottom: 18px;
 }
-.health h2 { font-size: 13px; font-weight: 650; color: var(--ink-2); margin-bottom: 8px; }
-.health-list { display: flex; flex-direction: column; gap: 4px; }
+.health summary {
+  display: flex; align-items: center; gap: 8px;
+  list-style: none; cursor: pointer;
+  font-size: 13px; font-weight: 650; color: var(--ink-2);
+  user-select: none;
+}
+.health summary::-webkit-details-marker { display: none; }
+.health .warn-mark { color: var(--st-serious); }
+.health .chev { margin-left: auto; color: var(--muted); transition: rotate 0.15s; }
+.health[open] .chev { rotate: 180deg; }
+.health[open] summary { margin-bottom: 10px; }
+.health-list {
+  display: flex; flex-direction: column; gap: 4px;
+  max-height: 40vh; overflow-y: auto;
+}
 .health-row {
   display: flex; align-items: baseline; gap: 10px;
   font-size: 13px;

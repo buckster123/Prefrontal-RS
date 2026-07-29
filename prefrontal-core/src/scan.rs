@@ -28,10 +28,7 @@ fn scan_root(root: &Path, cfg: &Config) -> Vec<Project> {
         .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
         .filter_map(|e| {
             let name = e.file_name().to_string_lossy().to_string();
-            if name.starts_with('.') || cfg.ignore.contains(&name) {
-                return None;
-            }
-            if cfg.overrides.get(&name).is_some_and(|o| o.ignore) {
+            if is_ignored(&name, cfg) {
                 return None;
             }
             Some(scan_project(&e.path(), name, cfg))
@@ -39,7 +36,15 @@ fn scan_root(root: &Path, cfg: &Config) -> Vec<Project> {
         .collect()
 }
 
-fn scan_project(dir: &Path, name: String, cfg: &Config) -> Project {
+/// Skipped entirely: hidden dirs, configured ignores, and per-project `ignore` overrides.
+pub fn is_ignored(name: &str, cfg: &Config) -> bool {
+    name.starts_with('.')
+        || cfg.ignore.iter().any(|i| i == name)
+        || cfg.overrides.get(name).is_some_and(|o| o.ignore)
+}
+
+/// Scan one project directory — the watcher's per-change unit of work.
+pub fn scan_project(dir: &Path, name: String, cfg: &Config) -> Project {
     let git = git_info(dir);
     let ovr = cfg.overrides.get(&name);
 

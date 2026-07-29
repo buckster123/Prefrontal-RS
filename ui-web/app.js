@@ -26,6 +26,8 @@ const FLAG_VIEW = {
 };
 
 let projects = [];
+// once the user opens/closes the drawer themselves, stop auto-managing it
+let healthTouched = false;
 
 function flagText(f) {
   const v = FLAG_VIEW[f.flag] ?? { label: f.flag, icon: "•", cls: "warning" };
@@ -70,6 +72,19 @@ function renderHealth(list) {
   const panel = document.getElementById("health");
   const flagged = list.filter((p) => p.health.length);
   panel.hidden = flagged.length === 0;
+
+  // collapsed summary: total + per-flag breakdown, so the alert reads at a glance
+  const counts = {};
+  for (const p of flagged) for (const f of p.health) counts[f.flag] = (counts[f.flag] ?? 0) + 1;
+  const parts = Object.entries(counts).map(
+    ([k, n]) => `${FLAG_VIEW[k]?.label ?? k} ×${n}`
+  );
+  document.getElementById("health-summary").textContent =
+    `${flagged.length} need${flagged.length === 1 ? "s" : ""} attention — ${parts.join(" · ")}`;
+
+  // a handful auto-opens; a wall of them stays tidy behind the drawer
+  if (!healthTouched) panel.open = flagged.length > 0 && flagged.length <= 4;
+
   const rows = document.getElementById("health-list");
   rows.replaceChildren();
   for (const p of flagged) {
@@ -165,12 +180,18 @@ function handleEvent(ev) {
     if (i >= 0) projects[i] = ev.project;
     else projects.push(ev.project);
     projects.sort((a, b) => b.last_touched_unix - a.last_touched_unix);
+  } else if (ev.type === "project_removed") {
+    projects = projects.filter((p) => p.path !== ev.path);
   }
   render();
 }
 
 async function boot() {
   document.getElementById("filter").addEventListener("input", render);
+  document.getElementById("health").addEventListener("toggle", (e) => {
+    if (e.isTrusted) healthTouched = true;
+  });
+  setInterval(render, 60_000); // keep "Nd ago" honest while the tab sits open
   try {
     const ws = new WebSocket(`ws://${location.host}/ws`);
     ws.onmessage = (m) => handleEvent(JSON.parse(m.data));

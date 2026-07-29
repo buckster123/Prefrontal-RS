@@ -4,4 +4,4 @@ pub mod config;
 pub mod scan;
 
 pub use config::Config;
-pub use scan::scan_all;
+pub use scan::{is_ignored, scan_all, scan_project};

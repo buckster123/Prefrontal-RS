@@ -16,7 +16,7 @@ pub enum Activity {
     Archived,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GitInfo {
     /// Current branch, if HEAD is on one.
     pub branch: Option<String>,
@@ -30,7 +30,7 @@ pub struct GitInfo {
     pub remote: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "flag", rename_all = "snake_case")]
 pub enum HealthFlag {
     /// Not a git repository at all.
@@ -43,7 +43,9 @@ pub enum HealthFlag {
     DirtyPile { count: u32 },
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// `PartialEq` lets the daemon suppress broadcasts for rescans where nothing
+/// the dashboard shows actually changed.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Project {
     pub name: String,
     pub path: String,
@@ -67,8 +69,10 @@ pub struct Project {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
-    /// Full state, sent on connect (and after rescans until delta events land).
+    /// Full state, sent on connect and after a full rescan.
     Snapshot { projects: Vec<Project> },
-    /// A single project changed on disk (phase 1: file watcher).
+    /// A single project changed on disk.
     ProjectChanged { project: Project },
+    /// A project directory disappeared from the root.
+    ProjectRemoved { path: String },
 }

@@ -26,10 +26,14 @@
            autocomplete="off" spellcheck="false">
   </section>
 
-  <section class="health" id="health" aria-label="needs attention" hidden>
-    <h2>⚠ needs attention</h2>
+  <details class="health" id="health" aria-label="needs attention" hidden>
+    <summary>
+      <span class="warn-mark">⚠</span>
+      <span id="health-summary">needs attention</span>
+      <span class="chev">▾</span>
+    </summary>
     <div class="health-list" id="health-list"></div>
-  </section>
+  </details>
 
   <main id="groups">
     <!-- activity groups injected -->

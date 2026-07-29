@@ -1,3 +1,5 @@
+mod watch;
+
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
@@ -7,16 +9,19 @@ use axum::{
         State,
     },
     response::IntoResponse,
-    routing::get,
+    routing::{get, post},
     Json, Router,
 };
 use prefrontal_core::{scan_all, Config};
 use prefrontal_protocol::{Event, Project};
+use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
-use tracing::info;
+use tracing::{error, info};
 
-struct AppState {
-    cfg: Config,
+pub struct AppState {
+    pub cfg: Config,
+    pub projects: RwLock<Vec<Project>>,
+    pub tx: broadcast::Sender<Event>,
 }
 
 #[tokio::main]
@@ -31,10 +36,23 @@ async fn main() -> Result<()> {
     let cfg = Config::load()?;
     let bind = cfg.server.bind.clone();
     let ui_dir = cfg.server.ui_dir.clone();
-    let state = Arc::new(AppState { cfg });
+
+    let initial = {
+        let cfg = cfg.clone();
+        tokio::task::spawn_blocking(move || scan_all(&cfg)).await?
+    };
+    info!("initial scan: {} projects", initial.len());
+
+    let (tx, _) = broadcast::channel(64);
+    let state = Arc::new(AppState { cfg, projects: RwLock::new(initial), tx });
+
+    if let Err(e) = watch::spawn(state.clone()) {
+        error!("file watcher failed ({e:#}) — dashboard is static; POST /api/rescan to refresh");
+    }
 
     let app = Router::new()
         .route("/api/projects", get(list_projects))
+        .route("/api/rescan", post(rescan))
         .route("/ws", get(ws_upgrade))
         .fallback_service(ServeDir::new(&ui_dir))
         .with_state(state);
@@ -47,17 +65,20 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-/// Scan-per-request for now; the phase-1 watcher replaces this with a warm
-/// cache + delta pushes over /ws.
-async fn scan_blocking(state: &Arc<AppState>) -> Vec<Project> {
-    let cfg = state.cfg.clone();
-    tokio::task::spawn_blocking(move || scan_all(&cfg))
-        .await
-        .unwrap_or_default()
+async fn list_projects(State(state): State<Arc<AppState>>) -> Json<Vec<Project>> {
+    Json(state.projects.read().await.clone())
 }
 
-async fn list_projects(State(state): State<Arc<AppState>>) -> Json<Vec<Project>> {
-    Json(scan_blocking(&state).await)
+/// Full rescan on demand — the escape hatch when the watcher can't run
+/// (or for a client that wants certainty).
+async fn rescan(State(state): State<Arc<AppState>>) -> Json<Vec<Project>> {
+    let cfg = state.cfg.clone();
+    let fresh = tokio::task::spawn_blocking(move || scan_all(&cfg))
+        .await
+        .unwrap_or_default();
+    *state.projects.write().await = fresh.clone();
+    let _ = state.tx.send(Event::Snapshot { projects: fresh.clone() });
+    Json(fresh)
 }
 
 async fn ws_upgrade(
@@ -68,12 +89,39 @@ async fn ws_upgrade(
 }
 
 async fn ws_session(mut socket: WebSocket, state: Arc<AppState>) {
-    let snapshot = Event::Snapshot { projects: scan_blocking(&state).await };
-    if let Ok(json) = serde_json::to_string(&snapshot) {
-        if socket.send(Message::Text(json.into())).await.is_err() {
-            return;
+    // Subscribe before snapshotting so no delta can fall between the two.
+    let mut rx = state.tx.subscribe();
+    let snapshot = Event::Snapshot { projects: state.projects.read().await.clone() };
+    if send_event(&mut socket, &snapshot).await.is_err() {
+        return;
+    }
+    loop {
+        tokio::select! {
+            ev = rx.recv() => match ev {
+                Ok(ev) => {
+                    if send_event(&mut socket, &ev).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    let snap = Event::Snapshot { projects: state.projects.read().await.clone() };
+                    if send_event(&mut socket, &snap).await.is_err() {
+                        break;
+                    }
+                }
+                Err(broadcast::error::RecvError::Closed) => break,
+            },
+            msg = socket.recv() => match msg {
+                Some(Ok(_)) => {} // clients only listen; drain to notice a close
+                _ => break,
+            },
         }
     }
-    // Hold the connection; ProjectChanged deltas land here once the watcher exists.
-    while let Some(Ok(_)) = socket.recv().await {}
+}
+
+async fn send_event(socket: &mut WebSocket, ev: &Event) -> Result<(), axum::Error> {
+    match serde_json::to_string(ev) {
+        Ok(json) => socket.send(Message::Text(json.into())).await,
+        Err(_) => Ok(()),
+    }
 }
