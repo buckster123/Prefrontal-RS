@@ -5724,6 +5724,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "prefrontal-client"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "futures-util",
+ "prefrontal-protocol",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "tokio-tungstenite 0.24.0",
+]
+
+[[package]]
 name = "prefrontal-core"
 version = "0.1.0"
 dependencies = [
