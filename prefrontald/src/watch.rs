@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use notify::{RecommendedWatcher, RecursiveMode, Watcher};
-use prefrontal_core::{is_ignored, scan_project};
+use prefrontal_core::{is_ignored, scan_project, SKIP_DIRS};
 use prefrontal_protocol::Event as WireEvent;
 use tokio::sync::mpsc;
 use tracing::{debug, info};
@@ -24,9 +24,6 @@ use crate::AppState;
 /// save-storm collapses into one rescan.
 const QUIET: Duration = Duration::from_millis(600);
 const MAX_DEPTH: u32 = 8;
-/// Never watched, regardless of config — high-churn build output.
-const WATCH_SKIP: &[&str] =
-    &["target", "node_modules", "venv", "__pycache__", "dist", "build", ".vite"];
 
 struct Raw {
     path: PathBuf,
@@ -91,7 +88,7 @@ fn add_watches(w: &mut RecommendedWatcher, dir: &Path, depth: u32) -> usize {
             }
             continue;
         }
-        if name.starts_with('.') || WATCH_SKIP.contains(&name.as_str()) {
+        if name.starts_with('.') || SKIP_DIRS.contains(&name.as_str()) {
             continue;
         }
         n += add_watches(w, &path, depth + 1);
@@ -128,7 +125,7 @@ async fn debounce_loop(
                     let name = raw.path.file_name()
                         .map(|n| n.to_string_lossy().to_string())
                         .unwrap_or_default();
-                    if !name.starts_with('.') && !WATCH_SKIP.contains(&name.as_str()) {
+                    if !name.starts_with('.') && !SKIP_DIRS.contains(&name.as_str()) {
                         add_watches(&mut watcher, &raw.path, 0);
                     }
                 }

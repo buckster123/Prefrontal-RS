@@ -107,3 +107,7 @@ Everything below is computed, never hand-maintained:
 - **2026-07-29** — Charter locked (D1–D9). Scaffold created.
 - **2026-07-29** — Phase 1 "Pulse" complete: watcher + WS deltas, health drawer,
   where-was-I timeline (web + `prefrontal timeline`), WS auto-reconnect.
+- **2026-07-29** — Phase 2 "Notes" complete: doc list/read/write API (traversal-safe,
+  comrak server-side render), project panel UI (browse/read/edit/create, Ctrl+S),
+  pathspec-scoped auto-commit `[prefrontal] note: <path>` — first note committed
+  through the flow was `notes/phase-3-ideas.md`, by the feature itself.

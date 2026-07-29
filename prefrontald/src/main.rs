@@ -6,14 +6,15 @@ use anyhow::{Context, Result};
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        Path, State,
     },
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json, Router,
 };
 use prefrontal_core::{scan_all, Config};
-use prefrontal_protocol::{Event, Project};
+use prefrontal_protocol::{DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
 use tracing::{error, info};
@@ -53,6 +54,8 @@ async fn main() -> Result<()> {
     let app = Router::new()
         .route("/api/projects", get(list_projects))
         .route("/api/rescan", post(rescan))
+        .route("/api/docs/{project}", get(list_docs))
+        .route("/api/doc/{project}/{*path}", get(read_doc).put(write_doc))
         .route("/ws", get(ws_upgrade))
         .fallback_service(ServeDir::new(&ui_dir))
         .with_state(state);
@@ -79,6 +82,74 @@ async fn rescan(State(state): State<Arc<AppState>>) -> Json<Vec<Project>> {
     *state.projects.write().await = fresh.clone();
     let _ = state.tx.send(Event::Snapshot { projects: fresh.clone() });
     Json(fresh)
+}
+
+type ApiError = (StatusCode, String);
+
+/// Projects are addressed by name; the daemon resolves to a path only through
+/// its own scan cache — clients never send filesystem paths for projects.
+async fn project_dir(state: &Arc<AppState>, name: &str) -> Result<std::path::PathBuf, ApiError> {
+    state
+        .projects
+        .read()
+        .await
+        .iter()
+        .find(|p| p.name == name)
+        .map(|p| std::path::PathBuf::from(&p.path))
+        .ok_or_else(|| (StatusCode::NOT_FOUND, format!("unknown project: {name}")))
+}
+
+fn render_markdown(raw: &str) -> String {
+    let mut opts = comrak::Options::default();
+    opts.extension.table = true;
+    opts.extension.strikethrough = true;
+    opts.extension.tasklist = true;
+    opts.extension.autolink = true;
+    // render.unsafe_ stays false: raw HTML in docs is escaped, not executed
+    comrak::markdown_to_html(raw, &opts)
+}
+
+async fn list_docs(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<DocEntry>>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let docs = tokio::task::spawn_blocking(move || prefrontal_core::list_docs(&dir))
+        .await
+        .unwrap_or_default();
+    Ok(Json(docs))
+}
+
+async fn read_doc(
+    Path((project, path)): Path<(String, String)>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<DocContent>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let rel = path.clone();
+    let (raw, modified_unix) =
+        tokio::task::spawn_blocking(move || prefrontal_core::read_doc(&dir, &rel))
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    let html = render_markdown(&raw);
+    Ok(Json(DocContent { project, path, raw, html, modified_unix }))
+}
+
+async fn write_doc(
+    Path((project, path)): Path<(String, String)>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<DocWrite>,
+) -> Result<Json<DocWriteResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let result = tokio::task::spawn_blocking(move || {
+        prefrontal_core::write_doc(&dir, &path, &body.content)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    // no manual cache poke: the watcher sees the write (and the commit) and
+    // pushes the ProjectChanged delta itself
+    Ok(Json(result))
 }
 
 async fn ws_upgrade(

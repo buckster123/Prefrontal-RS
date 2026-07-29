@@ -5,6 +5,10 @@ use prefrontal_protocol::{Activity, CommitSummary, GitInfo, HealthFlag, Project}
 
 use crate::config::Config;
 
+/// High-churn build output — never watched, never doc-walked.
+pub const SKIP_DIRS: &[&str] =
+    &["target", "node_modules", "venv", "__pycache__", "dist", "build", ".vite"];
+
 /// Scan every root, newest-touched first.
 ///
 /// Synchronous and unhurried by design — callers on async runtimes wrap it in

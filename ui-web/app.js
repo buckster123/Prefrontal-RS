@@ -157,6 +157,8 @@ function renderTimeline(list) {
 
 function card(p) {
   const c = el("article", "card" + (p.activity === "archived" ? " archived" : ""));
+  c.title = `open docs & notes for ${p.name}`;
+  c.onclick = () => openPanel(p.name);
 
   const head = el("div", "head");
   head.append(el("span", "name", p.name), el("span", "ago", ago(p.last_touched_unix)));
@@ -187,6 +189,173 @@ function card(p) {
   }
   if (meta.childElementCount) c.append(meta);
   return c;
+}
+
+/* ---------- project panel (docs & notes) ---------- */
+
+const panel = {
+  project: null,
+  docs: [],
+  openPath: null,
+  raw: "",
+  mode: "view", // view | edit | create
+};
+
+const $ = (id) => document.getElementById(id);
+
+function status(msg, cls) {
+  const s = $("panel-status");
+  s.replaceChildren(cls ? el("span", cls, msg) : document.createTextNode(msg));
+}
+
+function setMode(mode) {
+  panel.mode = mode;
+  const editing = mode !== "view";
+  $("doc-view").hidden = editing;
+  $("doc-editor").hidden = !editing;
+  $("doc-filename").hidden = mode !== "create";
+  $("btn-edit").hidden = editing || !panel.openPath;
+  $("btn-save").hidden = !editing;
+  $("btn-cancel").hidden = !editing;
+  $("btn-new").hidden = editing;
+  if (editing) $(mode === "create" ? "doc-filename" : "doc-editor").focus();
+}
+
+async function openPanel(projectName) {
+  panel.project = projectName;
+  panel.openPath = null;
+  $("panel-title").textContent = projectName;
+  $("panel-path").textContent = "";
+  $("doc-view").replaceChildren();
+  status("");
+  setMode("view");
+  $("overlay").hidden = false;
+  try {
+    const res = await fetch(`/api/docs/${encodeURIComponent(projectName)}`);
+    panel.docs = res.ok ? await res.json() : [];
+  } catch {
+    panel.docs = [];
+  }
+  renderDocList();
+  if (panel.docs.length) {
+    openDoc(panel.docs[0].path); // README sorts first server-side
+  } else {
+    $("doc-view").replaceChildren(el("div", "empty", "no docs here yet — start one with ＋ note"));
+  }
+}
+
+function renderDocList() {
+  const list = $("doc-list");
+  list.replaceChildren();
+  if (!panel.docs.length) {
+    list.append(el("div", "none", "no docs"));
+    return;
+  }
+  for (const d of panel.docs) {
+    const a = el("a", d.path === panel.openPath ? "sel" : "", d.path);
+    a.href = "#";
+    a.title = d.path;
+    a.onclick = (e) => {
+      e.preventDefault();
+      openDoc(d.path);
+    };
+    list.append(a);
+  }
+}
+
+async function openDoc(path) {
+  try {
+    const res = await fetch(
+      `/api/doc/${encodeURIComponent(panel.project)}/${path.split("/").map(encodeURIComponent).join("/")}`
+    );
+    if (!res.ok) {
+      status(await res.text(), "warn");
+      return;
+    }
+    const doc = await res.json();
+    panel.openPath = doc.path;
+    panel.raw = doc.raw;
+    $("panel-path").textContent = doc.path;
+    $("doc-view").innerHTML = doc.html; // comrak output, raw HTML escaped server-side
+    $("doc-view").scrollTop = 0;
+    status("");
+    setMode("view");
+    renderDocList();
+  } catch {
+    status("daemon unreachable", "warn");
+  }
+}
+
+async function saveDoc() {
+  const path = panel.mode === "create" ? $("doc-filename").value.trim() : panel.openPath;
+  if (!path) {
+    status("give the note a filename", "warn");
+    return;
+  }
+  const content = $("doc-editor").value;
+  status("saving…");
+  try {
+    const res = await fetch(
+      `/api/doc/${encodeURIComponent(panel.project)}/${path.split("/").map(encodeURIComponent).join("/")}`,
+      { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ content }) }
+    );
+    if (!res.ok) {
+      status(await res.text(), "warn");
+      return;
+    }
+    const r = await res.json();
+    if (r.committed) {
+      status(`saved · committed ${r.commit_id ?? ""}`, "ok");
+    } else {
+      status(`saved · not committed${r.detail ? ` — ${r.detail}` : ""}`, "warn");
+    }
+    if (panel.mode === "create" && !panel.docs.some((d) => d.path === path)) {
+      panel.docs.push({ path, size: content.length, modified_unix: Date.now() / 1000 });
+      panel.docs.sort((a, b) => (a.path !== "README.md") - (b.path !== "README.md") || a.path.localeCompare(b.path));
+    }
+    openDoc(path);
+  } catch {
+    status("save failed — daemon unreachable", "warn");
+  }
+}
+
+function closePanel() {
+  $("overlay").hidden = true;
+  panel.project = null;
+}
+
+function bindPanel() {
+  $("btn-close").onclick = closePanel;
+  $("overlay").onclick = (e) => {
+    if (e.target === $("overlay")) closePanel();
+  };
+  $("btn-edit").onclick = () => {
+    $("doc-editor").value = panel.raw;
+    setMode("edit");
+  };
+  $("btn-cancel").onclick = () => {
+    if (panel.openPath) openDoc(panel.openPath);
+    else {
+      setMode("view");
+      $("doc-view").replaceChildren(el("div", "empty", "no docs here yet — start one with ＋ note"));
+    }
+  };
+  $("btn-new").onclick = () => {
+    const stamp = new Date().toISOString().slice(0, 10);
+    $("doc-filename").value = `notes/${stamp}-idea.md`;
+    $("doc-editor").value = "";
+    setMode("create");
+    $("doc-filename").select();
+  };
+  $("btn-save").onclick = saveDoc;
+  document.addEventListener("keydown", (e) => {
+    if ($("overlay").hidden) return;
+    if (e.key === "Escape") closePanel();
+    if ((e.ctrlKey || e.metaKey) && e.key === "s" && panel.mode !== "view") {
+      e.preventDefault();
+      saveDoc();
+    }
+  });
 }
 
 function render() {
@@ -277,6 +446,7 @@ async function boot() {
     if (e.isTrusted) healthTouched = true;
   });
   setInterval(render, 60_000); // keep "Nd ago" and day labels honest while the tab sits open
+  bindPanel();
   connectWS();
   // REST fallback / first paint even if WS is slow
   try {

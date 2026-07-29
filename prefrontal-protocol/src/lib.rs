@@ -79,6 +79,44 @@ pub struct Project {
     pub has_claude_md: bool,
 }
 
+/// One markdown/text file inside a project, path relative to the project root.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DocEntry {
+    pub path: String,
+    pub size: u64,
+    pub modified_unix: i64,
+}
+
+/// A doc served for viewing: raw source plus server-rendered HTML.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocContent {
+    pub project: String,
+    pub path: String,
+    pub raw: String,
+    /// comrak output with raw HTML escaped — safe to inject as innerHTML.
+    pub html: String,
+    pub modified_unix: i64,
+}
+
+/// Body of a doc write (create or update).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocWrite {
+    pub content: String,
+}
+
+/// What happened to a saved doc. `saved` is always true on a 200 —
+/// commit state is reported honestly rather than pretended (charter D9:
+/// local commit always *attempted*, never push).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DocWriteResult {
+    pub saved: bool,
+    pub committed: bool,
+    /// Short hash when committed.
+    pub commit_id: Option<String>,
+    /// Why it didn't commit (not a repo, identity unset, no changes…).
+    pub detail: Option<String>,
+}
+
 /// Frames pushed over the daemon's WebSocket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

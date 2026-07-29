@@ -48,8 +48,35 @@
     <!-- activity groups injected -->
   </main>
 
+  <div class="overlay" id="overlay" hidden>
+    <div class="panel" role="dialog" aria-modal="true">
+      <header class="panel-head">
+        <span class="panel-title" id="panel-title"></span>
+        <span class="panel-path" id="panel-path"></span>
+        <span class="panel-actions">
+          <button id="btn-new" type="button">＋ note</button>
+          <button id="btn-edit" type="button" hidden>edit</button>
+          <button id="btn-save" type="button" hidden>save</button>
+          <button id="btn-cancel" type="button" hidden>cancel</button>
+          <button id="btn-close" type="button" title="close (Esc)">✕</button>
+        </span>
+      </header>
+      <div class="panel-body">
+        <nav class="doc-list" id="doc-list"></nav>
+        <div class="doc-main">
+          <input id="doc-filename" class="doc-filename" hidden
+                 autocomplete="off" spellcheck="false" placeholder="notes/my-idea.md">
+          <div class="doc-view md" id="doc-view"></div>
+          <textarea id="doc-editor" class="doc-editor" hidden
+                    spellcheck="false" placeholder="capture it before it evaporates…"></textarea>
+        </div>
+      </div>
+      <footer class="panel-status" id="panel-status"></footer>
+    </div>
+  </div>
+
   <footer class="foot">
-    <span id="foot-note">Prefrontal-RS · phase 1: pulse · 127.0.0.1 only</span>
+    <span id="foot-note">Prefrontal-RS · phase 2: notes · 127.0.0.1 only</span>
   </footer>
 
   <script src="app.js"></script>
