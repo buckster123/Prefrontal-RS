@@ -1,0 +1,323 @@
+// Prefrontal-RS native UI — same palette as ui-web, system default font.
+// Reading surface only (charter D4): dashboard, timeline, plain-text docs.
+
+import { ListView, LineEdit } from "std-widgets.slint";
+
+export struct ProjectItem {
+    name: string,
+    tagline: string,
+    activity: string,
+    branch: string,
+    dirty: int,
+    ago: string,
+    langs: string,
+    flags: string,
+}
+
+export struct TimelineItem {
+    stamp: string,
+    project: string,
+    summary: string,
+}
+
+export struct DocItem {
+    path: string,
+}
+
+export component MainWindow inherits Window {
+    title: "Prefrontal";
+    background: #0d0d0d;
+    preferred-width: 1150px;
+    preferred-height: 740px;
+    default-font-size: 14px;
+
+    in property <[ProjectItem]> projects;
+    in property <[TimelineItem]> timeline;
+    in property <[DocItem]> docs;
+    in property <string> stats: "connecting…";
+    in property <bool> connected: false;
+    in property <string> open-project: "";
+    in property <string> doc-path: "";
+    in property <string> doc-content: "";
+
+    callback filter-edited(string);
+    callback project-clicked(string);
+    callback doc-clicked(string);
+    callback back();
+
+    function activity-color(a: string) -> color {
+        a == "active" ? #3987e5
+        : a == "warm" ? #86b6ef
+        : a == "cold" ? #898781
+        : #5b5a55
+    }
+
+    VerticalLayout {
+        padding: 16px;
+        spacing: 12px;
+
+        // ---- header ----
+        HorizontalLayout {
+            spacing: 10px;
+            Text { text: "🧠"; font-size: 18px; vertical-alignment: center; }
+            Text {
+                text: "Prefrontal";
+                color: #ffffff;
+                font-size: 18px;
+                font-weight: 650;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.stats;
+                color: #898781;
+                font-size: 12px;
+                vertical-alignment: center;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            Rectangle {
+                width: 10px; height: 10px;
+                y: (parent.height - self.height) / 2;
+                border-radius: 5px;
+                background: root.connected ? #0ca30c : #d03b3b;
+            }
+        }
+
+        if root.open-project == "" : VerticalLayout {
+            spacing: 12px;
+
+            LineEdit {
+                placeholder-text: "filter projects…";
+                edited(text) => { root.filter-edited(text); }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                // ---- projects ----
+                Rectangle {
+                    horizontal-stretch: 3;
+                    background: #1a1a19;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #2c2c2a;
+                    clip: true;
+                    ListView {
+                        for p in root.projects : Rectangle {
+                            height: 66px;
+                            background: touch.has-hover ? #232322 : transparent;
+                            touch := TouchArea {
+                                clicked => { root.project-clicked(p.name); }
+                            }
+                            HorizontalLayout {
+                                padding-left: 12px;
+                                padding-right: 12px;
+                                padding-top: 8px;
+                                padding-bottom: 8px;
+                                spacing: 10px;
+                                Rectangle {
+                                    width: 9px;
+                                    VerticalLayout {
+                                        alignment: start;
+                                        padding-top: 6px;
+                                        Rectangle {
+                                            width: 9px; height: 9px;
+                                            border-radius: 4.5px;
+                                            background: root.activity-color(p.activity);
+                                        }
+                                    }
+                                }
+                                VerticalLayout {
+                                    spacing: 2px;
+                                    horizontal-stretch: 1;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text {
+                                            text: p.name;
+                                            color: #ffffff;
+                                            font-size: 14px;
+                                            font-weight: 650;
+                                        }
+                                        Text {
+                                            text: p.langs;
+                                            color: #898781;
+                                            font-size: 11px;
+                                            vertical-alignment: center;
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                        Text {
+                                            text: p.ago;
+                                            color: #898781;
+                                            font-size: 11px;
+                                        }
+                                    }
+                                    Text {
+                                        text: p.tagline;
+                                        color: #c3c2b7;
+                                        font-size: 12px;
+                                        overflow: elide;
+                                    }
+                                    HorizontalLayout {
+                                        spacing: 10px;
+                                        Text {
+                                            text: p.branch == "" ? "" : "⎇ " + p.branch;
+                                            color: #898781;
+                                            font-size: 11px;
+                                            overflow: elide;
+                                        }
+                                        Text {
+                                            text: p.dirty > 0 ? p.dirty + " dirty" : "";
+                                            color: #fab219;
+                                            font-size: 11px;
+                                        }
+                                        Text {
+                                            text: p.flags;
+                                            color: #ec835a;
+                                            font-size: 11px;
+                                            overflow: elide;
+                                        }
+                                        Rectangle { horizontal-stretch: 1; }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // ---- where was I ----
+                Rectangle {
+                    horizontal-stretch: 2;
+                    background: #1a1a19;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #2c2c2a;
+                    clip: true;
+                    VerticalLayout {
+                        padding: 12px;
+                        spacing: 8px;
+                        Text {
+                            text: "⏪ where was I";
+                            color: #c3c2b7;
+                            font-size: 12px;
+                            font-weight: 650;
+                        }
+                        ListView {
+                            for t in root.timeline : Rectangle {
+                                height: 40px;
+                                VerticalLayout {
+                                    spacing: 1px;
+                                    HorizontalLayout {
+                                        spacing: 8px;
+                                        Text { text: t.stamp; color: #898781; font-size: 11px; }
+                                        Text {
+                                            text: t.project;
+                                            color: #ffffff;
+                                            font-size: 12px;
+                                            font-weight: 650;
+                                            overflow: elide;
+                                        }
+                                    }
+                                    Text {
+                                        text: t.summary;
+                                        color: #c3c2b7;
+                                        font-size: 11.5px;
+                                        overflow: elide;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // ---- doc reader ----
+        if root.open-project != "" : VerticalLayout {
+            spacing: 12px;
+
+            HorizontalLayout {
+                spacing: 12px;
+                Rectangle {
+                    width: 110px; height: 30px;
+                    background: back-touch.has-hover ? #232322 : #1a1a19;
+                    border-radius: 6px;
+                    border-width: 1px;
+                    border-color: #2c2c2a;
+                    back-touch := TouchArea { clicked => { root.back(); } }
+                    Text {
+                        text: "← projects";
+                        color: #c3c2b7;
+                        font-size: 12px;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                }
+                Text {
+                    text: root.open-project;
+                    color: #ffffff;
+                    font-size: 15px;
+                    font-weight: 650;
+                    vertical-alignment: center;
+                }
+                Text {
+                    text: root.doc-path;
+                    color: #898781;
+                    font-size: 12px;
+                    vertical-alignment: center;
+                    overflow: elide;
+                }
+                Rectangle { horizontal-stretch: 1; }
+            }
+
+            HorizontalLayout {
+                spacing: 12px;
+
+                Rectangle {
+                    width: 250px;
+                    background: #1a1a19;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #2c2c2a;
+                    clip: true;
+                    ListView {
+                        for d in root.docs : Rectangle {
+                            height: 30px;
+                            background: d.path == root.doc-path ? #2c2c2a
+                                : doc-touch.has-hover ? #232322 : transparent;
+                            doc-touch := TouchArea { clicked => { root.doc-clicked(d.path); } }
+                            Text {
+                                x: 10px;
+                                width: parent.width - 20px;
+                                text: d.path;
+                                color: d.path == root.doc-path ? #ffffff : #c3c2b7;
+                                font-size: 12px;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    horizontal-stretch: 1;
+                    background: #1a1a19;
+                    border-radius: 8px;
+                    border-width: 1px;
+                    border-color: #2c2c2a;
+                    clip: true;
+                    Flickable {
+                        viewport-height: doc-text.preferred-height + 40px;
+                        VerticalLayout {
+                            padding: 20px;
+                            doc-text := Text {
+                                text: root.doc-content;
+                                color: #c3c2b7;
+                                font-size: 13.5px;
+                                wrap: word-wrap;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

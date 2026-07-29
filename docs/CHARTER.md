@@ -124,6 +124,11 @@ Everything below is computed, never hand-maintained:
   tree-sitter's C runtime is exactly the linking pattern D7 avoids; revisit only
   if precision demands real parsing. ~230k symbol docs (name+kind indexed,
   signature+line stored); a name query ranks the declaration above its file.
+- **2026-07-29** — Phase 5 "Slint" shipped: `ui-slint` crate (binary `prefrontal-ui`)
+  over the same WS/REST surface — dashboard with activity dots + filter,
+  where-was-I pane, per-project doc reader (plain text per D4, no editing).
+  Same palette as ui-web, WS reconnect with backoff. Default winit backend;
+  add `backend-linuxkms-noseat` for pure-ApexOS KMS/DRM.
 - **2026-07-29** — Phase 4 "Agents" complete: `prefrontal mcp` — hand-rolled MCP
   stdio server (newline-delimited JSON-RPC, no SDK dep), 7 tools
   (`list_projects`, `project_status`, `where_was_i`, `search`, `list_docs`,

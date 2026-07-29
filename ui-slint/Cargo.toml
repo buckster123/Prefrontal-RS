@@ -1,0 +1,27 @@
+[package]
+name = "ui-slint"
+description = "Prefrontal-RS native UI — Slint frontend over the prefrontald WebSocket"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "prefrontal-ui"
+path = "src/main.rs"
+
+[dependencies]
+prefrontal-protocol = { workspace = true }
+# default backend: winit + femtovg — add "backend-linuxkms-noseat" for
+# pure-ApexOS KMS/DRM setups, same as ApexOS-RS ui-slint
+slint = "1"
+tokio = { workspace = true }
+tokio-tungstenite = "0.24"
+futures-util = "0.3"
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+chrono = "0.4"
+
+[build-dependencies]
+slint-build = "1"
