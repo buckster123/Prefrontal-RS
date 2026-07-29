@@ -1,0 +1,107 @@
+# Prefrontal-RS — Project Charter
+
+> **Executive function as a service.** A fully local, live-updating dashboard over `~/Projects`
+> — the first stop after being AFK. An AuDHD prosthetic named after the hardware it's prosthetizing.
+
+*Charter locked 2026-07-29. Changes to locked decisions get a dated entry in the Decisions Log below.*
+
+---
+
+## The problem
+
+~48 projects in `~/Projects` across several eras (active Rust cluster, Quest/VR-Godot era,
+Python LLM-infra era). Three recurring failure modes this tool exists to kill:
+
+1. **Lost thread** — back from AFK, no idea where work stopped or in which project.
+2. **Lost work** — uncommitted piles and remoteless repos nobody is watching
+   (found on day one: 44 dirty files + no remote in one repo, 107 commits with no remote in another,
+   9 folders with no git at all).
+3. **Lost code** — "I've already written this somewhere" → re-implementing instead of finding
+   the existing function buried in a forgotten project.
+
+## What it is
+
+A daemon that watches the projects root, understands git, and serves a live dashboard:
+browse projects, read/edit/create markdown in-app, search code and docs across everything,
+and expose the same brain to agents via MCP + CLI.
+
+## What it is not (non-goals)
+
+- Not a kanban/PM tool, no tickets, no time tracking.
+- No cloud, no accounts, no telemetry. `127.0.0.1` only.
+- Not an IDE. Editing is for notes/docs; code editing stays in real editors.
+- No Electron, no bundled Chromium. The web UI is plain static assets served by the daemon.
+
+---
+
+## Locked decisions
+
+| # | Decision | Rationale |
+|---|----------|-----------|
+| D1 | **Name: Prefrontal-RS** | Slots into the brain-region series (Occipital, CerebroCortex); the prefrontal cortex *is* executive function. |
+| D2 | **House architecture**: daemon + shared protocol crate + thin frontends over WebSocket | Same shape as ApexOS-RS (`agentd` / `apexos-protocol` / `ui-slint`). Proven in-ecosystem. |
+| D3 | **Web frontend is the daily driver**; Slint frontend is a later, ApexOS-native port | Main use is on the laptop via browser. Rich markdown editing is web-territory. |
+| D4 | **Slint frontend is text-only where it must be** | No markdown widget in Slint; dashboard/browse/read is its wheelhouse, editing stays web-side. We compromise in Slint, never in web. |
+| D5 | **Central config**, not per-project dotfiles | One file owned by the dashboard (`~/.config/prefrontal/config.toml`). Projects stay unpolluted; works on repos you don't own. |
+| D6 | **CerebroCortex-RS integration is optional and feature-flagged** (`features.cerebro`, default off) | Must be useful to people without a Cerebro on their system if this goes public. Core search (tantivy + tree-sitter) has zero Cerebro dependency. |
+| D7 | **Pure-Rust backend** (`gix`, not libgit2; tantivy; tree-sitter) | ApexOS ethos: one toolchain, no C library linking pain. |
+| D8 | **Zero config to first paint** | Point it at a root (default `~/Projects`), get a dashboard. Overrides are opt-in polish. |
+| D9 | **The dash commits notes itself** — local commit always (`[prefrontal]` prefix), push is optional/configurable | Idea-capture must not depend on remembering to commit. |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ prefrontald                                             │
+│  scanner ── git (gix) ── watcher (notify)               │
+│  index (tantivy) ── symbols (tree-sitter)               │
+│  notes engine (md + auto-commit)                        │
+│  [feature: cerebro] ── CerebroCortex-RS client          │
+│  axum: REST + WS (:7320) + static ui-web                │
+└──────────────┬──────────────────────┬───────────────────┘
+               │ ws/http              │ ws
+        ┌──────┴──────┐        ┌──────┴──────┐
+        │   ui-web    │        │  ui-slint   │  (phase 5)
+        │ daily driver│        │ ApexOS-native│
+        └─────────────┘        └─────────────┘
+   prefrontal (CLI) ── same core as lib + MCP stdio server
+```
+
+- **`prefrontal-protocol`** — wire/domain types (`Project`, `Activity`, `HealthFlag`, `Event`).
+  Frontends deserialize into the *same* enum the daemon serializes from — no string matching.
+- **`prefrontal-core`** — config, scanner, git logic as a library. Daemon *and* CLI consume it,
+  so the CLI works even when the daemon isn't running.
+- **`prefrontald`** — the daemon. Port **7320** ("PFC" on a phone keypad).
+- **`prefrontal-cli`** — binary `prefrontal`. Human subcommands now, MCP stdio server in phase 4.
+- **`ui-web`** — static assets, no build step, no CDN. Vendored libs only (CodeMirror later).
+
+## Derived project model
+
+Everything below is computed, never hand-maintained:
+
+- **Activity** (from last commit / fs mtime, thresholds configurable):
+  `active` < 7d · `warm` < 30d · `cold` < 180d · `parked` ≥ 180d · `archived` (manual override only)
+- **Health flags**: `no_git` · `no_remote` · `never_committed` · `dirty_pile` (≥ 10 dirty files)
+- **Languages** from manifests (Cargo.toml, package.json, pyproject/requirements, project.godot — root + one level deep)
+- **Tagline** from README (first `###` heading or first paragraph), overridable centrally
+
+## Phases
+
+| Phase | Scope | Done when |
+|-------|-------|-----------|
+| **1. Pulse** | Scanner, health flags, activity states, web dashboard with card grid + health panel + "where was I" timeline (cross-project recent commits). WS live updates via file watcher. | Opening `localhost:7320` after a week AFK answers "where was I" in one screen. |
+| **2. Notes** | Markdown render (view any md in any project), edit + create notes, auto-commit with `[prefrontal]` prefix. `plan_drafts/` and `docs/` become first-class citizens. | Idea captured in the dash lands as a local commit without touching a terminal. |
+| **3. Recall** | tantivy full-text over code/docs/commit messages; tree-sitter symbol index (`fn`/`struct`/`class` cards across all projects). Incremental via watcher. | "resampler" finds `fn resample_audio` in a project you forgot existed, in <1s. |
+| **4. Agents** | MCP stdio server in the CLI: `project_list`, `project_status`, `where_was_i`, `search_code`, `find_symbol`, `read_doc`, `write_doc`. | A Claude session answers "do we already have X?" from Prefrontal instead of grepping. |
+| **5. Slint** | `ui-slint` over the same WS protocol: dashboard, browse, read (text-rendered md). No editing. | Runs on a pure ApexOS setup with no browser. |
+| **6. Cortex** *(optional, feature-flag)* | Ingest project summaries + docs into CerebroCortex-RS; semantic "that thing where I…" queries alongside lexical search. | Vague memory queries beat grep. |
+
+## Open questions (not blocking phase 1)
+
+- Local-LLM "you were mid-way through X" resume blurbs (ecosystem inference stack) — nice-to-have, phase 6+.
+- Multiple roots (e.g. add `~/Projects-archive`) — config supports a list from day one, UI grouping TBD.
+- Push policy for auto-committed notes (never / ask / always-per-project) — default **never push**, revisit in phase 2.
+
+## Decisions log
+
+- **2026-07-29** — Charter locked (D1–D9). Scaffold created.

@@ -1,0 +1,9 @@
+[package]
+name = "prefrontal-protocol"
+description = "Prefrontal-RS wire types — frontends deserialize the same enums the daemon serializes"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+serde = { workspace = true }

@@ -1,0 +1,17 @@
+[package]
+name = "prefrontald"
+description = "Prefrontal-RS daemon — scanner, git, REST + WS on :7320, serves ui-web"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+prefrontal-protocol = { workspace = true }
+prefrontal-core = { workspace = true }
+tokio = { workspace = true }
+axum = { version = "0.8", features = ["ws"] }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tower-http = { version = "0.7.0", features = ["fs"] }

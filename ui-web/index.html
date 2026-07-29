@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prefrontal</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-icon">🧠</span>
+      <h1>Prefrontal</h1>
+      <span class="brand-sub">executive function as a service</span>
+    </div>
+    <div class="conn" id="conn" title="daemon connection">●</div>
+  </header>
+
+  <section class="stats" id="stats" aria-label="overview">
+    <!-- stat tiles injected -->
+  </section>
+
+  <section class="controls">
+    <input id="filter" type="search" placeholder="filter projects — name, tag, language, tagline…"
+           autocomplete="off" spellcheck="false">
+  </section>
+
+  <section class="health" id="health" aria-label="needs attention" hidden>
+    <h2>⚠ needs attention</h2>
+    <div class="health-list" id="health-list"></div>
+  </section>
+
+  <main id="groups">
+    <!-- activity groups injected -->
+  </main>
+
+  <footer class="foot">
+    <span id="foot-note">Prefrontal-RS · phase 1: pulse · 127.0.0.1 only</span>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

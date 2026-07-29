@@ -1,0 +1,17 @@
+[package]
+name = "prefrontal-cli"
+description = "prefrontal — terminal view of the same scan; MCP stdio server in phase 4"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "prefrontal"
+path = "src/main.rs"
+
+[dependencies]
+prefrontal-protocol = { workspace = true }
+prefrontal-core = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive"] }

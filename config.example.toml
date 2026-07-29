@@ -1,0 +1,28 @@
+# Prefrontal-RS config — copy to ~/.config/prefrontal/config.toml
+# Everything here is optional; defaults shown.
+
+# Directories to scan (each immediate subdirectory = one project).
+roots = ["~/Projects"]
+
+# Directory names to skip entirely.
+ignore = [".vite", "node_modules", "target"]
+
+[thresholds]
+active_days = 7      # last touched within → "active"
+warm_days = 30       # → "warm"
+cold_days = 180      # → "cold", beyond → "parked"
+dirty_pile = 10      # uncommitted files at/above this → health flag
+
+[server]
+bind = "127.0.0.1:7320"   # "PFC" on a phone keypad
+ui_dir = "ui-web"         # static assets; relative to CWD or absolute
+
+[features]
+cerebro = false      # CerebroCortex-RS semantic layer (phase 6, needs a cortex on-system)
+
+# Per-project overrides live centrally — projects stay unpolluted (charter D5).
+# [overrides.mecha-ai]
+# status = "parked"                 # pin regardless of activity math ("archived" also valid)
+# tags = ["robotics", "inspiration"]
+# tagline = "Custom one-liner shown on the card"
+# ignore = false                    # true → hide from dashboard entirely
