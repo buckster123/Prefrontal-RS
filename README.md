@@ -120,6 +120,13 @@ Seven tools — `list_projects`, `project_status`, `where_was_i`, `search`,
 answers even when nothing else is running. Your agent checks whether the
 function exists before writing it a second time.
 
+For harnesses that support **Agent Skills**, ship the included skill so
+smaller models know *how* to use the tools, not just that they exist:
+
+```sh
+cp -r skills/prefrontal ~/.claude/skills/   # Claude Code (user-level)
+```
+
 ### Extending (Rust SDK)
 
 ```rust
