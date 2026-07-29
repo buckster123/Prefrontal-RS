@@ -242,6 +242,7 @@ body {
 .card { cursor: pointer; }
 .card:hover { border-color: var(--act-active); }
 
+.overlay[hidden] { display: none; }
 .overlay {
   position: fixed; inset: 0;
   background: rgba(0, 0, 0, 0.55);
