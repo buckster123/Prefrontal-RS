@@ -239,5 +239,8 @@ fn readme_tagline(dir: &Path) -> Option<String> {
 }
 
 fn clean_md(s: &str) -> String {
-    s.trim_matches(['*', '_', ' ']).to_string()
+    // taglines sometimes sit inside raw-HTML blocks — strip stray tags
+    static TAG: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"<[^>]*>").expect("static regex"));
+    TAG.replace_all(s, "").trim_matches(['*', '_', ' ']).to_string()
 }

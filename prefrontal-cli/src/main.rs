@@ -33,6 +33,12 @@ enum Command {
     },
     /// Serve the MCP stdio server (for agents: claude mcp add prefrontal -- prefrontal mcp)
     Mcp,
+    /// Semantic recall via the CerebroCortex layer (needs features.cerebro)
+    Recall {
+        query: Vec<String>,
+    },
+    /// Push/update every project's summary into the cortex
+    CortexSync,
 }
 
 fn main() -> Result<()> {
@@ -65,8 +71,35 @@ fn main() -> Result<()> {
         Command::Timeline => print_timeline(&projects),
         Command::Find { query, limit } => find(&projects, &query.join(" "), limit)?,
         Command::Mcp => unreachable!("handled before the scan"),
+        Command::Recall { query } => {
+            let mut client = cortex_client(&cfg)?;
+            for h in client.recall(&query.join(" "), cfg.cortex.top_k)? {
+                let score = h.score.map(|s| format!(" ({s:.2})")).unwrap_or_default();
+                println!("[{}]{score} {}", h.agent_id, h.content.replace('\n', "\n  "));
+                println!();
+            }
+        }
+        Command::CortexSync => {
+            let mut client = cortex_client(&cfg)?;
+            let (mut created, mut updated) = (0, 0);
+            for p in &projects {
+                match client.sync_project(p)? {
+                    true => created += 1,
+                    false => updated += 1,
+                }
+                println!("  synced {}", p.name);
+            }
+            println!("cortex sync done — {created} created, {updated} updated");
+        }
     }
     Ok(())
+}
+
+fn cortex_client(cfg: &Config) -> Result<prefrontal_core::cortex::CortexClient> {
+    if !cfg.features.cerebro {
+        anyhow::bail!("cortex layer disabled — set features.cerebro = true and [cortex] command in the config");
+    }
+    prefrontal_core::cortex::CortexClient::spawn(&cfg.cortex)
 }
 
 fn find(projects: &[Project], query: &str, limit: usize) -> Result<()> {

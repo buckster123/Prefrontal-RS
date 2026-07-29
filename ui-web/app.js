@@ -196,14 +196,53 @@ function card(p) {
 let searchTimer = null;
 let searchSeq = 0;
 
+let cortexAvailable = true; // flips off on the first 503 so we stop asking
+
 function scheduleSearch() {
   clearTimeout(searchTimer);
   const q = document.getElementById("filter").value.trim();
   if (q.length < 3) {
     document.getElementById("search-results").hidden = true;
+    document.getElementById("cortex-results").hidden = true;
     return;
   }
-  searchTimer = setTimeout(() => runSearch(q), 250);
+  searchTimer = setTimeout(() => {
+    runSearch(q);
+    runCortex(q);
+  }, 250);
+}
+
+async function runCortex(q) {
+  const section = document.getElementById("cortex-results");
+  if (!cortexAvailable) return;
+  try {
+    const res = await fetch(`/api/cortex?q=${encodeURIComponent(q)}`);
+    if (res.status === 503) {
+      cortexAvailable = false; // feature off — stay quiet for the session
+      return;
+    }
+    if (!res.ok) {
+      section.hidden = true;
+      return;
+    }
+    const hits = await res.json();
+    section.hidden = hits.length === 0;
+    document.getElementById("cortex-count").textContent = hits.length ? `(${hits.length})` : "";
+    const list = document.getElementById("cortex-list");
+    list.replaceChildren();
+    for (const h of hits) {
+      const row = el("div", "hit");
+      const top = el("div", "top");
+      top.append(el("span", "proj", h.agent_id || "memory"), el("span", "kind", "recall"));
+      if (h.score != null) top.append(el("span", "loc", h.score.toFixed(2)));
+      for (const t of h.tags.slice(0, 4)) top.append(el("span", "loc", `#${t}`));
+      row.append(top, el("div", "snippet", h.content.slice(0, 220)));
+      row.title = h.content.slice(0, 1000);
+      list.append(row);
+    }
+  } catch {
+    section.hidden = true;
+  }
 }
 
 async function runSearch(q) {

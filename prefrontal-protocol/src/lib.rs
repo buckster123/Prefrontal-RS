@@ -131,6 +131,15 @@ pub struct SearchHit {
     pub score: f32,
 }
 
+/// One semantic-recall result from the (optional) CerebroCortex layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CortexHit {
+    pub content: String,
+    pub agent_id: String,
+    pub tags: Vec<String>,
+    pub score: Option<f64>,
+}
+
 /// Frames pushed over the daemon's WebSocket.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]

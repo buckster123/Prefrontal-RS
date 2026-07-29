@@ -129,6 +129,13 @@ Everything below is computed, never hand-maintained:
   where-was-I pane, per-project doc reader (plain text per D4, no editing).
   Same palette as ui-web, WS reconnect with backoff. Default winit backend;
   add `backend-linuxkms-noseat` for pure-ApexOS KMS/DRM.
+- **2026-07-29** — Phase 6 "Cortex" complete (feature-flagged per D6, default off):
+  `[cortex]` config points at any cerebro MCP binary; Prefrontal speaks MCP as a
+  *client* (mirror of phase 4's server). One semantic summary per project,
+  tag-deduped upsert (`prefrontal` + `project:<name>`, visibility shared),
+  recall via `/api/cortex?q=`, the 🧠 semantic-recall UI section, and
+  `prefrontal recall` / `cortex-sync`. Validated: "the project where the agent
+  browses the web politely" → Occipital-RS top hit.
 - **2026-07-29** — Phase 4 "Agents" complete: `prefrontal mcp` — hand-rolled MCP
   stdio server (newline-delimited JSON-RPC, no SDK dep), 7 tools
   (`list_projects`, `project_status`, `where_was_i`, `search`, `list_docs`,

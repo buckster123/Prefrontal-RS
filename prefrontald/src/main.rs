@@ -13,9 +13,12 @@ use axum::{
     routing::{get, post},
     Json, Router,
 };
+use prefrontal_core::cortex::CortexClient;
 use prefrontal_core::search::SearchIndex;
 use prefrontal_core::{scan_all, Config};
-use prefrontal_protocol::{DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project, SearchHit};
+use prefrontal_protocol::{
+    CortexHit, DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project, SearchHit,
+};
 use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
 use tracing::{error, info, warn};
@@ -26,6 +29,9 @@ pub struct AppState {
     pub tx: broadcast::Sender<Event>,
     /// None when the index couldn't be opened — search degrades, nothing else does.
     pub search: Option<Arc<SearchIndex>>,
+    /// Some(...) only when features.cerebro is on; inner None until first use
+    /// (the client spawns lazily and respawns after any error).
+    pub cortex: Option<Arc<std::sync::Mutex<Option<CortexClient>>>>,
 }
 
 #[tokio::main]
@@ -58,8 +64,15 @@ async fn main() -> Result<()> {
         None => None,
     };
 
+    let cortex = if cfg.features.cerebro && !cfg.cortex.command.is_empty() {
+        info!("cortex layer enabled — {}", cfg.cortex.command);
+        Some(Arc::new(std::sync::Mutex::new(None)))
+    } else {
+        None
+    };
+
     let (tx, _) = broadcast::channel(64);
-    let state = Arc::new(AppState { cfg, projects: RwLock::new(initial), tx, search });
+    let state = Arc::new(AppState { cfg, projects: RwLock::new(initial), tx, search, cortex });
 
     if let Err(e) = watch::spawn(state.clone()) {
         error!("file watcher failed ({e:#}) — dashboard is static; POST /api/rescan to refresh");
@@ -70,6 +83,8 @@ async fn main() -> Result<()> {
         .route("/api/projects", get(list_projects))
         .route("/api/rescan", post(rescan))
         .route("/api/search", get(search_handler))
+        .route("/api/cortex", get(cortex_recall))
+        .route("/api/cortex/sync", post(cortex_sync))
         .route("/api/docs/{project}", get(list_docs))
         .route("/api/doc/{project}/{*path}", get(read_doc).put(write_doc))
         .route("/raw/{project}/{*path}", get(raw_asset))
@@ -164,6 +179,70 @@ async fn search_handler(
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("{e:#}")))?;
     Ok(Json(hits))
+}
+
+/// Run a closure against the lazily-spawned cortex client; any error drops
+/// the client so the next call respawns fresh.
+async fn with_cortex<T, F>(state: &Arc<AppState>, f: F) -> Result<T, ApiError>
+where
+    T: Send + 'static,
+    F: FnOnce(&mut CortexClient) -> anyhow::Result<T> + Send + 'static,
+{
+    let Some(slot) = state.cortex.clone() else {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "cortex layer disabled".into()));
+    };
+    let cortex_cfg = state.cfg.cortex.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut guard = slot.lock().expect("cortex slot poisoned");
+        if guard.is_none() {
+            *guard = Some(
+                CortexClient::spawn(&cortex_cfg)
+                    .map_err(|e| (StatusCode::BAD_GATEWAY, format!("{e:#}")))?,
+            );
+        }
+        let client = guard.as_mut().expect("just spawned");
+        f(client).map_err(|e| {
+            *guard = None; // poisoned pipe or protocol drift — respawn next time
+            (StatusCode::BAD_GATEWAY, format!("{e:#}"))
+        })
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+}
+
+#[derive(serde::Deserialize)]
+struct CortexParams {
+    q: String,
+}
+
+async fn cortex_recall(
+    axum::extract::Query(params): axum::extract::Query<CortexParams>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<CortexHit>>, ApiError> {
+    let top_k = state.cfg.cortex.top_k;
+    let q = params.q.clone();
+    let hits = with_cortex(&state, move |c| c.recall(&q, top_k)).await?;
+    Ok(Json(hits))
+}
+
+async fn cortex_sync(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, ApiError> {
+    let projects = state.projects.read().await.clone();
+    let (created, updated) = with_cortex(&state, move |c| {
+        let mut created = 0u32;
+        let mut updated = 0u32;
+        for p in &projects {
+            match c.sync_project(p)? {
+                true => created += 1,
+                false => updated += 1,
+            }
+        }
+        Ok((created, updated))
+    })
+    .await?;
+    info!("cortex sync: {created} created, {updated} updated");
+    Ok(Json(serde_json::json!({ "created": created, "updated": updated })))
 }
 
 type ApiError = (StatusCode, String);

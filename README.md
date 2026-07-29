@@ -33,7 +33,9 @@ cargo run -p prefrontal-cli --  status   # same scan, in your terminal
 ```
 
 The `prefrontal` binary also carries `health` (rot check), `timeline` (where was I),
-`find <terms>` (full-text over code/docs/commits), and `mcp` — an MCP stdio server
+`find <terms>` (full-text over code/docs/commits), `recall <words>` + `cortex-sync`
+(optional [CerebroCortex-RS](https://github.com/buckster123/CerebroCortex-RS)
+semantic layer, `features.cerebro`), and `mcp` — an MCP stdio server
 so agents can ask the same questions:
 
 ```sh

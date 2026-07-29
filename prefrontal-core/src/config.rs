@@ -18,6 +18,7 @@ pub struct Config {
     pub timeline: TimelineConfig,
     pub server: ServerConfig,
     pub features: Features,
+    pub cortex: CortexConfig,
     /// Keyed by project directory name.
     pub overrides: HashMap<String, ProjectOverride>,
 }
@@ -54,6 +55,33 @@ pub struct Features {
     pub cerebro: bool,
 }
 
+/// How to reach a CerebroCortex MCP server (charter D6: optional, off unless
+/// `features.cerebro` — plenty of users won't have a cortex on their system).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct CortexConfig {
+    /// Path to the cortex MCP binary (e.g. cerebro-mcp). Empty = disabled.
+    pub command: String,
+    pub args: Vec<String>,
+    pub env: HashMap<String, String>,
+    /// Who Prefrontal's memories belong to in the cortex.
+    pub agent_id: String,
+    /// Default result count for recall queries.
+    pub top_k: u32,
+}
+
+impl Default for CortexConfig {
+    fn default() -> Self {
+        Self {
+            command: String::new(),
+            args: Vec::new(),
+            env: HashMap::new(),
+            agent_id: "prefrontal".into(),
+            top_k: 8,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectOverride {
@@ -74,6 +102,7 @@ impl Default for Config {
             timeline: TimelineConfig::default(),
             server: ServerConfig::default(),
             features: Features::default(),
+            cortex: CortexConfig::default(),
             overrides: HashMap::new(),
         }
     }

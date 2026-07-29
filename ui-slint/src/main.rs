@@ -85,21 +85,18 @@ fn main() -> Result<()> {
 async fn ws_loop(weak: Weak<MainWindow>, shared: Arc<Mutex<Shared>>) {
     let mut backoff = Duration::from_secs(1);
     loop {
-        match tokio_tungstenite::connect_async(WS).await {
-            Ok((stream, _)) => {
-                backoff = Duration::from_secs(1);
-                set_connected(&weak, true);
-                let (_, mut read) = stream.split();
-                while let Some(Ok(msg)) = read.next().await {
-                    if let Ok(text) = msg.into_text() {
-                        if let Ok(event) = serde_json::from_str::<Event>(&text) {
-                            apply(&shared, event);
-                            refresh(&weak, &shared);
-                        }
+        if let Ok((stream, _)) = tokio_tungstenite::connect_async(WS).await {
+            backoff = Duration::from_secs(1);
+            set_connected(&weak, true);
+            let (_, mut read) = stream.split();
+            while let Some(Ok(msg)) = read.next().await {
+                if let Ok(text) = msg.into_text() {
+                    if let Ok(event) = serde_json::from_str::<Event>(&text) {
+                        apply(&shared, event);
+                        refresh(&weak, &shared);
                     }
                 }
             }
-            Err(_) => {}
         }
         set_connected(&weak, false);
         tokio::time::sleep(backoff).await;
@@ -236,10 +233,7 @@ fn stamp(unix: i64) -> String {
 
 async fn open_project(weak: Weak<MainWindow>, name: String) {
     let docs: Vec<prefrontal_protocol::DocEntry> =
-        match fetch_json(&format!("{BASE}/api/docs/{name}")).await {
-            Some(d) => d,
-            None => Vec::new(),
-        };
+        fetch_json(&format!("{BASE}/api/docs/{name}")).await.unwrap_or_default();
     let first = docs.first().map(|d| d.path.clone());
     let items: Vec<DocItem> = docs
         .into_iter()

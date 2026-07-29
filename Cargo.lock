@@ -5733,6 +5733,7 @@ dependencies = [
  "prefrontal-protocol",
  "regex",
  "serde",
+ "serde_json",
  "tantivy",
  "toml",
 ]

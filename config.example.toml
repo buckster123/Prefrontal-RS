@@ -24,6 +24,17 @@ ui_dir = "ui-web"         # static assets; relative to CWD or absolute
 [features]
 cerebro = false      # CerebroCortex-RS semantic layer (phase 6, needs a cortex on-system)
 
+# Only read when features.cerebro = true: how to reach your cortex's MCP server.
+# Prefrontal upserts one summary per project (tags: prefrontal, project:<name>)
+# and answers /api/cortex?q= + `prefrontal recall` via semantic recall.
+# [cortex]
+# command = "/path/to/cerebro-mcp"
+# args = []
+# agent_id = "prefrontal"
+# top_k = 8
+# [cortex.env]
+# CEREBRO_DATA_DIR = "/path/to/cortex/data"
+
 # Per-project overrides live centrally — projects stay unpolluted (charter D5).
 # [overrides.mecha-ai]
 # status = "parked"                 # pin regardless of activity math ("archived" also valid)
