@@ -11,13 +11,20 @@ use prefrontal_protocol::{DocEntry, DocWriteResult};
 use crate::scan::SKIP_DIRS;
 
 const DOC_EXTENSIONS: &[&str] = &["md", "markdown", "txt"];
+/// What `/raw` may serve — images referenced by docs, nothing executable.
+const ASSET_EXTENSIONS: &[&str] =
+    &["png", "jpg", "jpeg", "gif", "svg", "webp", "ico", "bmp", "avif"];
 const MAX_DEPTH: u32 = 8;
 const MAX_DOCS: usize = 500;
 
-fn is_doc(path: &Path) -> bool {
+fn has_ext(path: &Path, allowed: &[&str]) -> bool {
     path.extension()
         .and_then(|e| e.to_str())
-        .is_some_and(|e| DOC_EXTENSIONS.contains(&e.to_lowercase().as_str()))
+        .is_some_and(|e| allowed.contains(&e.to_lowercase().as_str()))
+}
+
+fn is_doc(path: &Path) -> bool {
+    has_ext(path, DOC_EXTENSIONS)
 }
 
 /// All doc files under a project, README first, then by path.
@@ -66,6 +73,20 @@ fn walk(root: &Path, dir: &Path, depth: u32, out: &mut Vec<DocEntry>) {
 /// Resolve a client-supplied relative path to an absolute one, refusing
 /// absolute paths, `..`, non-doc extensions, and symlink escapes.
 pub fn resolve_doc_path(project_dir: &Path, rel: &str, for_write: bool) -> Result<PathBuf> {
+    resolve_rel_path(project_dir, rel, DOC_EXTENSIONS, for_write)
+}
+
+/// Same guards as docs, image extensions, read-only — backs `/raw`.
+pub fn resolve_asset_path(project_dir: &Path, rel: &str) -> Result<PathBuf> {
+    resolve_rel_path(project_dir, rel, ASSET_EXTENSIONS, false)
+}
+
+fn resolve_rel_path(
+    project_dir: &Path,
+    rel: &str,
+    allowed_exts: &[&str],
+    for_write: bool,
+) -> Result<PathBuf> {
     let rel_path = Path::new(rel);
     if rel_path.is_absolute()
         || rel_path
@@ -74,8 +95,8 @@ pub fn resolve_doc_path(project_dir: &Path, rel: &str, for_write: bool) -> Resul
     {
         bail!("path must be relative and stay inside the project");
     }
-    if !is_doc(rel_path) {
-        bail!("only {DOC_EXTENSIONS:?} files");
+    if !has_ext(rel_path, allowed_exts) {
+        bail!("only {allowed_exts:?} files");
     }
     let full = project_dir.join(rel_path);
     if for_write {

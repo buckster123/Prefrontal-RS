@@ -263,6 +263,44 @@ function renderDocList() {
   }
 }
 
+// Resolve doc-relative references: images go through /raw, sibling docs
+// navigate inside the panel, external links open a fresh tab.
+function fixupDocLinks(container, project, docPath) {
+  const dir = docPath.includes("/") ? docPath.slice(0, docPath.lastIndexOf("/") + 1) : "";
+  const isExternal = (u) => /^([a-z][a-z0-9+.-]*:)?\/\//i.test(u) || u.startsWith("data:") || u.startsWith("/");
+  const resolve = (rel) => {
+    const out = [];
+    for (const p of (dir + rel).split("/")) {
+      if (p === "" || p === ".") continue;
+      if (p === "..") out.pop();
+      else out.push(p);
+    }
+    return out.join("/");
+  };
+  const rawUrl = (rel) =>
+    `/raw/${encodeURIComponent(project)}/${resolve(rel).split("/").map(encodeURIComponent).join("/")}`;
+
+  for (const img of container.querySelectorAll("img")) {
+    const src = img.getAttribute("src") ?? "";
+    if (src && !isExternal(src)) img.src = rawUrl(src);
+  }
+  for (const a of container.querySelectorAll("a")) {
+    const href = a.getAttribute("href") ?? "";
+    if (!href || href.startsWith("#")) continue;
+    if (isExternal(href)) {
+      a.target = "_blank";
+      a.rel = "noopener";
+    } else if (/\.(md|markdown|txt)(#.*)?$/i.test(href)) {
+      const target = resolve(href.split("#")[0]);
+      a.href = "#";
+      a.onclick = (e) => {
+        e.preventDefault();
+        openDoc(target);
+      };
+    }
+  }
+}
+
 async function openDoc(path) {
   try {
     const res = await fetch(
@@ -277,6 +315,7 @@ async function openDoc(path) {
     panel.raw = doc.raw;
     $("panel-path").textContent = doc.path;
     $("doc-view").innerHTML = doc.html; // comrak output, raw HTML escaped server-side
+    fixupDocLinks($("doc-view"), panel.project, doc.path);
     $("doc-view").scrollTop = 0;
     status("");
     setMode("view");

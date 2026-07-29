@@ -56,6 +56,7 @@ async fn main() -> Result<()> {
         .route("/api/rescan", post(rescan))
         .route("/api/docs/{project}", get(list_docs))
         .route("/api/doc/{project}/{*path}", get(read_doc).put(write_doc))
+        .route("/raw/{project}/{*path}", get(raw_asset))
         .route("/ws", get(ws_upgrade))
         .fallback_service(ServeDir::new(&ui_dir))
         .with_state(state);
@@ -150,6 +151,41 @@ async fn write_doc(
     // no manual cache poke: the watcher sees the write (and the commit) and
     // pushes the ProjectChanged delta itself
     Ok(Json(result))
+}
+
+/// Read-only project images so docs can show their banners/screenshots.
+async fn raw_asset(
+    Path((project, path)): Path<(String, String)>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let rel = path.clone();
+    let bytes = tokio::task::spawn_blocking(move || -> anyhow::Result<Vec<u8>> {
+        let p = prefrontal_core::docs::resolve_asset_path(&dir, &rel)?;
+        Ok(std::fs::read(&p)?)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+
+    let mime = match path.rsplit('.').next().map(|e| e.to_lowercase()).as_deref() {
+        Some("png") => "image/png",
+        Some("jpg") | Some("jpeg") => "image/jpeg",
+        Some("gif") => "image/gif",
+        Some("svg") => "image/svg+xml",
+        Some("webp") => "image/webp",
+        Some("ico") => "image/x-icon",
+        Some("bmp") => "image/bmp",
+        Some("avif") => "image/avif",
+        _ => "application/octet-stream",
+    };
+    Ok((
+        [
+            (axum::http::header::CONTENT_TYPE, mime),
+            (axum::http::header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
+        ],
+        bytes,
+    ))
 }
 
 async fn ws_upgrade(
