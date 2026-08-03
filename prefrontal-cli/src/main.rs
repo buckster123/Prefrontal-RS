@@ -31,6 +31,12 @@ enum Command {
         #[arg(long, default_value_t = 20)]
         limit: usize,
     },
+    /// Which -RS siblings are installed and live on this machine
+    Colony {
+        /// Emit the raw protocol JSON instead of a table
+        #[arg(long)]
+        json: bool,
+    },
     /// Serve the MCP stdio server (for agents: claude mcp add prefrontal -- prefrontal mcp)
     Mcp,
     /// Semantic recall via the CerebroCortex layer (needs features.cerebro)
@@ -70,6 +76,17 @@ fn main() -> Result<()> {
         }
         Command::Timeline => print_timeline(&projects),
         Command::Find { query, limit } => find(&projects, &query.join(" "), limit)?,
+        Command::Colony { json } => {
+            if !cfg.colony.enabled {
+                anyhow::bail!("colony panel disabled in the config (colony.enabled = false)");
+            }
+            let colony = prefrontal_core::colony_status(&cfg, &projects);
+            if json {
+                println!("{}", serde_json::to_string_pretty(&colony)?);
+            } else {
+                print_colony(&colony);
+            }
+        }
         Command::Mcp => unreachable!("handled before the scan"),
         Command::Recall { query } => {
             let mut client = cortex_client(&cfg)?;
@@ -165,6 +182,57 @@ fn print_timeline(projects: &[Project]) {
             println!("\n{label}");
         }
         println!("  {}  {:<24} {}", local.format("%H:%M"), project, c.summary);
+    }
+}
+
+fn print_colony(colony: &prefrontal_protocol::ColonyStatus) {
+    use prefrontal_protocol::{Sibling, SiblingSurface};
+
+    let installed =
+        |s: &Sibling| s.checkout.is_some() || s.binary.is_some() || s.live == Some(true);
+    let surface = |s: SiblingSurface| match s {
+        SiblingSurface::WebUi => "web ui",
+        SiblingSurface::HttpApi => "api",
+        SiblingSurface::Mcp => "mcp",
+        SiblingSurface::Cli => "cli",
+        SiblingSurface::Native => "native",
+        SiblingSurface::NoRuntime => "—",
+    };
+
+    println!("{:<20} {:<8} {:<14} {:<6} REACH", "SIBLING", "SURFACE", "INSTALLED", "LIVE");
+    for s in &colony.siblings {
+        let how = match (&s.checkout, &s.binary) {
+            (Some(_), Some(_)) => "checkout+bin".to_string(),
+            (Some(_), None) => "checkout".to_string(),
+            (None, Some(_)) => "binary".to_string(),
+            (None, None) if s.live == Some(true) => "port only".to_string(),
+            (None, None) => "—".to_string(),
+        };
+        let live = match s.live {
+            Some(true) => "up",
+            Some(false) => "down",
+            None => "·",
+        };
+        let mut parts: Vec<String> = Vec::new();
+        if installed(s) {
+            match (&s.url, s.port) {
+                (Some(url), _) => parts.push(url.clone()),
+                (None, Some(p)) => parts.push(format!("http://127.0.0.1:{p} (api)")),
+                _ => {}
+            }
+            if let Some(mcp) = &s.mcp {
+                parts.push(format!("mcp: {mcp}"));
+            }
+            if parts.is_empty() {
+                if let Some(bin) = &s.binary {
+                    parts.push(bin.clone());
+                }
+            }
+        } else {
+            parts.push(format!("not here → {}", s.lander));
+        }
+        let reach = if parts.is_empty() { "—".to_string() } else { parts.join(" · ") };
+        println!("{:<20} {:<8} {:<14} {:<6} {}", s.name, surface(s.surface), how, live, reach);
     }
 }
 

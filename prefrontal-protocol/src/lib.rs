@@ -140,7 +140,62 @@ pub struct CortexHit {
     pub score: Option<f64>,
 }
 
-/// Frames pushed over the daemon's WebSocket.
+/// How a colony sibling is primarily reached on this machine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SiblingSurface {
+    /// Serves a browser UI — `url` is the way in.
+    WebUi,
+    /// HTTP API without a UI.
+    HttpApi,
+    /// MCP-first — reach it by its MCP server name.
+    Mcp,
+    /// A CLI binary.
+    Cli,
+    /// A native app; nothing to connect to.
+    Native,
+    /// Nothing runnable on a host at all (bare metal, templates).
+    NoRuntime,
+}
+
+/// One member of the -RS colony as seen from this machine. The detection
+/// signals are independent ORs — a sibling can be live with no checkout
+/// (binary installs) or checked out and dormant. `installed` is derived:
+/// `checkout.is_some() || binary.is_some() || live == Some(true)`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sibling {
+    pub name: String,
+    /// One-liner, from the built-in roster — never derived from READMEs.
+    pub tagline: String,
+    pub surface: SiblingSurface,
+    /// Effective loopback port (config override or roster default).
+    pub port: Option<u16>,
+    /// `http://127.0.0.1:<port>/` when the sibling serves a browser UI.
+    pub url: Option<String>,
+    /// MCP server name agents can reach it by, when it speaks MCP.
+    pub mcp: Option<String>,
+    /// Source checkout path under a scan root, if present.
+    pub checkout: Option<String>,
+    /// Installed binary path, if one was found in a known dir.
+    pub binary: Option<String>,
+    /// `Some(true)` = the port answered just now (401/403 counts — a rejection
+    /// proves liveness); `None` = no port to probe.
+    pub live: Option<bool>,
+    /// The sibling's lander page — where "not installed" points.
+    pub lander: String,
+}
+
+/// The whole colony, one probe sweep. Compare `siblings` (not the timestamp)
+/// to decide whether anything worth broadcasting changed.
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
+pub struct ColonyStatus {
+    pub siblings: Vec<Sibling>,
+    pub checked_unix: i64,
+}
+
+/// Frames pushed over the daemon's WebSocket. Connect sequence is
+/// `Snapshot` then (when the colony panel is enabled) `Colony` — together
+/// they cover all gaps, so clients still need zero replay logic.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Event {
@@ -151,4 +206,7 @@ pub enum Event {
     ProjectChanged { project: Box<Project> },
     /// A project directory disappeared from the root.
     ProjectRemoved { path: String },
+    /// Colony sweep result — sent on connect and whenever a sibling's state
+    /// actually changed (equal sweeps are suppressed, same as rescans).
+    Colony { colony: ColonyStatus },
 }

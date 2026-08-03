@@ -116,6 +116,7 @@ impl Server {
             "list_docs" => self.tool_list_docs(&s("project")),
             "read_doc" => self.tool_read_doc(&s("project"), &s("path")),
             "write_doc" => self.tool_write_doc(&s("project"), &s("path"), &s("content")),
+            "colony_status" => self.tool_colony_status(),
             _ => Err(format!("unknown tool: {name}")),
         };
         match outcome {
@@ -218,6 +219,15 @@ impl Server {
             .map_err(|e| format!("{e:#}"))
     }
 
+    fn tool_colony_status(&mut self) -> Result<String, String> {
+        if !self.cfg.colony.enabled {
+            return Err("colony panel disabled in the config (colony.enabled = false)".into());
+        }
+        let cfg = self.cfg.clone();
+        let colony = prefrontal_core::colony_status(&cfg, self.projects());
+        Ok(serde_json::to_string_pretty(&colony).unwrap_or_default())
+    }
+
     fn tool_write_doc(&mut self, project: &str, path: &str, content: &str) -> Result<String, String> {
         let dir = self
             .project_dir(project)
@@ -276,6 +286,11 @@ fn tool_definitions() -> Vec<Value> {
                 "path": { "type": "string" },
                 "content": { "type": "string" }
             }), &["project", "path", "content"]),
+        }),
+        json!({
+            "name": "colony_status",
+            "description": "Which sibling -RS services are installed on this machine, whether each is live RIGHT NOW (loopback probe), and how to reach it: web UI URL, HTTP API port, MCP server name, or CLI binary. Ask this before assuming a sibling like Cerebro or Imaginarium is (or isn't) running.",
+            "inputSchema": obj(json!({}), &[]),
         }),
     ]
 }

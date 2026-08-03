@@ -115,10 +115,11 @@ prefrontal recall "that vr thing"   # semantic (optional cortex layer)
 claude mcp add prefrontal -- /path/to/prefrontal mcp
 ```
 
-Seven tools — `list_projects`, `project_status`, `where_was_i`, `search`,
-`list_docs`, `read_doc`, `write_doc` — daemon-independent, so agents get
-answers even when nothing else is running. Your agent checks whether the
-function exists before writing it a second time.
+Eight tools — `list_projects`, `project_status`, `where_was_i`, `search`,
+`list_docs`, `read_doc`, `write_doc`, `colony_status` — daemon-independent,
+so agents get answers even when nothing else is running. Your agent checks
+whether the function exists before writing it a second time, and checks
+whether a sibling service is up before assuming either way.
 
 For harnesses that support **Agent Skills**, ship the included skill so
 smaller models know *how* to use the tools, not just that they exist:

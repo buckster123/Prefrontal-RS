@@ -19,6 +19,7 @@ pub struct Config {
     pub server: ServerConfig,
     pub features: Features,
     pub cortex: CortexConfig,
+    pub colony: ColonyConfig,
     /// Keyed by project directory name.
     pub overrides: HashMap<String, ProjectOverride>,
 }
@@ -82,6 +83,26 @@ impl Default for CortexConfig {
     }
 }
 
+/// The colony panel: which -RS siblings are installed and live. Only PORTS
+/// are configurable — probe hosts are hard-wired to 127.0.0.1, so the
+/// localhost-only invariant can't be configured away into LAN scanning.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
+pub struct ColonyConfig {
+    pub enabled: bool,
+    /// Seconds between daemon probe sweeps (also the CLI's answer freshness).
+    pub probe_interval_secs: u64,
+    /// Port overrides keyed by sibling name (e.g. "CerebroCortex-RS" = 9765) —
+    /// every roster port is just a default a dev setup may have moved.
+    pub ports: HashMap<String, u16>,
+}
+
+impl Default for ColonyConfig {
+    fn default() -> Self {
+        Self { enabled: true, probe_interval_secs: 15, ports: HashMap::new() }
+    }
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectOverride {
@@ -103,6 +124,7 @@ impl Default for Config {
             server: ServerConfig::default(),
             features: Features::default(),
             cortex: CortexConfig::default(),
+            colony: ColonyConfig::default(),
             overrides: HashMap::new(),
         }
     }

@@ -24,6 +24,14 @@ ui_dir = "ui-web"         # static assets; relative to CWD or absolute
 [features]
 cerebro = false      # CerebroCortex-RS semantic layer (phase 6, needs a cortex on-system)
 
+# The colony panel: which -RS siblings are installed/live on this machine.
+# Probes only ever touch 127.0.0.1 — hosts are not configurable, ports are.
+[colony]
+enabled = true
+probe_interval_secs = 15
+# [colony.ports]                    # override a sibling's default port
+# CerebroCortex-RS = 9765
+
 # Only read when features.cerebro = true: how to reach your cortex's MCP server.
 # Prefrontal upserts one summary per project (tags: prefrontal, project:<name>)
 # and answers /api/cortex?q= + `prefrontal recall` via semantic recall.

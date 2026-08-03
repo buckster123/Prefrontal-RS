@@ -26,6 +26,7 @@ const FLAG_VIEW = {
 };
 
 let projects = [];
+let colony = null;
 // once the user opens/closes the drawer themselves, stop auto-managing it
 let healthTouched = false;
 let wsRetryMs = 1000;
@@ -152,6 +153,86 @@ function renderTimeline(list) {
     row.append(el("span", "t", time), el("span", "msg", e.summary));
     row.title = `${e.id} — ${e.summary}`;
     block.append(row);
+  }
+}
+
+/* ---------- colony panel ---------- */
+
+// Mirrors prefrontal_protocol::SiblingSurface — same enum, no invented shapes.
+const SURFACE_LABEL = {
+  web_ui: "web ui",
+  http_api: "api",
+  mcp: "mcp",
+  cli: "cli",
+  native: "native",
+  no_runtime: "—",
+};
+
+function renderColony() {
+  const panel = document.getElementById("colony");
+  if (!colony || !colony.siblings.length) {
+    panel.hidden = true;
+    return;
+  }
+  // installed is an OR of independent signals: a sibling can be live with no
+  // checkout (binary installs) or checked out and dormant
+  const rows = colony.siblings.map((s) => ({
+    ...s,
+    installed: Boolean(s.checkout || s.binary || s.live === true),
+  }));
+  const live = rows.filter((s) => s.live === true).length;
+  const idle = rows.filter((s) => s.installed && s.live !== true).length;
+  const missing = rows.length - live - idle;
+  panel.hidden = false;
+  document.getElementById("colony-summary").textContent =
+    `colony — ${live} live · ${idle} installed · ${missing} not here`;
+
+  const list = document.getElementById("colony-list");
+  list.replaceChildren();
+  for (const s of rows) {
+    const row = el("div", "col-row");
+    // dot + state word together — never color alone
+    const dot = el("span", "dot" + (s.installed ? "" : " hollow"));
+    if (s.live === true) dot.style.background = "var(--st-good)";
+    else if (s.installed) dot.style.background = "var(--act-parked)";
+    const stateWord = s.live === true ? "live" : s.installed ? "installed" : "not installed";
+    row.append(
+      dot,
+      el("span", "name", s.name),
+      el("span", "state" + (s.installed ? "" : " dim"), stateWord),
+      el("span", "tagline", s.tagline)
+    );
+
+    const reach = el("span", "reach");
+    if (s.url && s.live === true) {
+      const a = el("a", "", `:${s.port} ↗`);
+      a.href = s.url;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.title = s.url;
+      reach.append(a);
+    } else if (s.port && s.installed) {
+      reach.append(el("code", "", `:${s.port}`));
+    }
+    if (s.mcp && s.installed) reach.append(el("code", "", `mcp:${s.mcp}`));
+    if (s.installed && !s.url && !s.port && !s.mcp && s.binary)
+      reach.append(el("code", "", s.binary.split("/").pop()));
+    if (!s.installed) {
+      const a = el("a", "", "lander ↗");
+      a.href = s.lander;
+      a.target = "_blank";
+      a.rel = "noopener";
+      a.title = s.lander;
+      reach.append(a);
+    }
+    reach.append(el("span", "kind", SURFACE_LABEL[s.surface] ?? s.surface));
+    row.append(reach);
+
+    row.title =
+      [s.checkout && `checkout: ${s.checkout}`, s.binary && `binary: ${s.binary}`]
+        .filter(Boolean)
+        .join("\n") || "not detected on this machine";
+    list.append(row);
   }
 }
 
@@ -533,6 +614,11 @@ function setConn(live) {
 }
 
 function handleEvent(ev) {
+  if (ev.type === "colony") {
+    colony = ev.colony;
+    renderColony(); // own renderer — project cards are untouched by a sweep
+    return;
+  }
   if (ev.type === "snapshot") {
     projects = ev.projects;
   } else if (ev.type === "project_changed") {
@@ -595,6 +681,15 @@ async function boot() {
     document.getElementById("groups").replaceChildren(
       el("div", "empty", "daemon unreachable — is prefrontald running?")
     );
+  }
+  try {
+    const res = await fetch("/api/colony");
+    if (res.ok && !colony) {
+      colony = await res.json();
+      renderColony();
+    } // 503 = panel disabled — stays hidden, like cortex
+  } catch {
+    /* daemon gone; the conn dot already says so */
   }
 }
 

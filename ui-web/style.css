@@ -207,6 +207,64 @@ body {
 .tl-commit .t { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .tl-commit .msg { color: var(--ink-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ---------- colony panel ---------- */
+.colony {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--act-warm);
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 18px;
+}
+.colony summary {
+  display: flex; align-items: center; gap: 8px;
+  list-style: none; cursor: pointer;
+  font-size: 13px; font-weight: 650; color: var(--ink-2);
+  user-select: none;
+}
+.colony summary::-webkit-details-marker { display: none; }
+.colony .col-mark { color: var(--act-warm); }
+.colony .chev { margin-left: auto; color: var(--muted); transition: rotate 0.15s; }
+.colony[open] .chev { rotate: 180deg; }
+.colony[open] summary { margin-bottom: 10px; }
+.colony-list { display: flex; flex-direction: column; gap: 5px; }
+.col-row { display: flex; align-items: baseline; gap: 10px; font-size: 13px; }
+.col-row .dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  flex-shrink: 0; align-self: center;
+}
+.col-row .dot.hollow { border: 1px solid var(--muted); }
+.col-row .name { font-weight: 600; min-width: 150px; }
+.col-row .state {
+  color: var(--ink-2); font-size: 11px;
+  text-transform: uppercase; letter-spacing: 0.5px;
+  min-width: 92px;
+}
+.col-row .state.dim { color: var(--muted); }
+.col-row .tagline {
+  color: var(--muted); flex: 1;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.col-row .reach { display: flex; gap: 6px; align-items: baseline; margin-left: auto; white-space: nowrap; }
+.col-row .reach a { color: var(--act-active); text-decoration: none; }
+.col-row .reach a:hover { text-decoration: underline; }
+.col-row .reach code {
+  font-family: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
+  font-size: 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  padding: 0 5px;
+  color: var(--ink-2);
+}
+.col-row .kind {
+  border: 1px solid var(--border); border-radius: 20px;
+  padding: 0 7px; font-size: 10.5px; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.5px;
+}
+@media (max-width: 700px) {
+  .col-row .tagline { display: none; }
+}
+
 /* ---------- groups & cards ---------- */
 .group { margin-bottom: 22px; }
 .group > h2 {

@@ -116,6 +116,8 @@ fn apply(shared: &Arc<Mutex<Shared>>, event: Event) {
             s.projects.sort_by_key(|p| std::cmp::Reverse(p.last_touched_unix));
         }
         Event::ProjectRemoved { path } => s.projects.retain(|p| p.path != path),
+        // Colony panel is web-side for now; the reading surface ignores it.
+        Event::Colony { .. } => {}
     }
 }
 

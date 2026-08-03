@@ -50,6 +50,35 @@ watcher keeps it current; no scan happens per request).
 Full rescan now; also broadcasts a fresh `snapshot` to every WS client.
 The escape hatch — normally the watcher makes this unnecessary.
 
+### `GET /api/colony` → `ColonyStatus`
+
+The -RS colony as seen from this machine: which siblings are installed
+(source checkout, binary in a known dir, or answering a port — independent
+ORs), which are live right now, and how to reach each. Probes touch loopback
+only; the daemon re-sweeps every 15 s (configurable) and this endpoint serves
+the cached result. `503` when `colony.enabled = false`.
+
+```jsonc
+{
+  "siblings": [{
+    "name": "ApexRouter-RS",
+    "tagline": "OpenAI-compatible model router",
+    "surface": "web_ui",              // web_ui | http_api | mcp | cli | native | no_runtime
+    "port": 8888,
+    "url": "http://127.0.0.1:8888/",  // only for web_ui siblings
+    "mcp": null,                      // MCP server name, when it speaks MCP
+    "checkout": null,                 // path under a scan root, if checked out
+    "binary": "/home/you/.local/bin/apexrouter",
+    "live": true,                     // null = no port to probe
+    "lander": "https://apexaurum.no/ApexRouter/"
+  }],
+  "checked_unix": 1785792887
+}
+```
+
+"Installed" is derived: `checkout || binary || live == true` — a sibling can
+be live with no checkout (binary installs) or checked out and dormant.
+
 ### `GET /api/search?q=<query>&limit=<n>` → `SearchHit[]`
 
 Full-text over code, docs, commit messages, **and symbol cards** (one tiny
@@ -108,10 +137,12 @@ JSON frames, tagged by `type`:
 | `{"type":"snapshot","projects":[…]}` | on connect, and after `/api/rescan` |
 | `{"type":"project_changed","project":{…}}` | a project's visible state changed on disk |
 | `{"type":"project_removed","path":"…"}` | a project directory disappeared |
+| `{"type":"colony","colony":{…}}` | on connect (after the snapshot), and when a sibling's state changed |
 
 Deltas are debounced (~600 ms of quiet per project) and suppressed when a
-rescan changes nothing the dashboard shows. On reconnect, the fresh snapshot
-covers anything missed — clients never need replay logic.
+rescan changes nothing the dashboard shows; colony sweeps that change nothing
+are suppressed the same way. On reconnect, the fresh snapshot (+ colony
+frame) covers anything missed — clients never need replay logic.
 
 ---
 
@@ -150,6 +181,7 @@ claude mcp add prefrontal -- /path/to/prefrontal mcp
 | `list_docs` | `project` | doc paths |
 | `read_doc` | `project`, `path` | raw markdown |
 | `write_doc` | `project`, `path`, `content` | write + local auto-commit result |
+| `colony_status` | — | -RS siblings: installed / live / how to reach |
 
 Tool failures come back as MCP `isError` results with a helpful message;
 JSON-RPC errors are reserved for protocol breakage.
@@ -163,6 +195,7 @@ prefrontal status [--json]   # table of everything
 prefrontal health            # only flagged projects (rot check)
 prefrontal timeline          # where was I, grouped by day
 prefrontal find <terms…>     # full-text + symbols
+prefrontal colony [--json]   # -RS siblings: installed / live / reach
 prefrontal recall <words…>   # semantic (needs features.cerebro)
 prefrontal cortex-sync       # upsert project summaries into the cortex
 prefrontal mcp               # serve MCP on stdio
@@ -179,7 +212,9 @@ shared index, built by the daemon).
 [`config.example.toml`](../config.example.toml) for the annotated reference.
 Highlights: `roots` (scan targets), `[thresholds]` (activity + dirty-pile),
 `[timeline]` (window/cap), `[overrides.<name>]` (pin status, tags, hide),
-`features.cerebro` + `[cortex]` (semantic layer).
+`features.cerebro` + `[cortex]` (semantic layer), `[colony]` (panel on/off,
+probe interval, per-sibling port overrides — ports only; probe hosts are
+hard-wired to loopback).
 
 The search index lives at `~/.local/share/prefrontal/index` and is a cache:
 schema changes wipe and rebuild it automatically.

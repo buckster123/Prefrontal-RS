@@ -17,7 +17,8 @@ use prefrontal_core::cortex::CortexClient;
 use prefrontal_core::search::SearchIndex;
 use prefrontal_core::{scan_all, Config};
 use prefrontal_protocol::{
-    CortexHit, DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project, SearchHit,
+    ColonyStatus, CortexHit, DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project,
+    SearchHit,
 };
 use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
@@ -32,6 +33,8 @@ pub struct AppState {
     /// Some(...) only when features.cerebro is on; inner None until first use
     /// (the client spawns lazily and respawns after any error).
     pub cortex: Option<Arc<std::sync::Mutex<Option<CortexClient>>>>,
+    /// Latest colony sweep; empty default when colony.enabled is off.
+    pub colony: RwLock<ColonyStatus>,
 }
 
 #[tokio::main]
@@ -71,16 +74,36 @@ async fn main() -> Result<()> {
         None
     };
 
+    let colony = if cfg.colony.enabled {
+        let cfg2 = cfg.clone();
+        let projects = initial.clone();
+        tokio::task::spawn_blocking(move || prefrontal_core::colony_status(&cfg2, &projects))
+            .await?
+    } else {
+        ColonyStatus::default()
+    };
+
     let (tx, _) = broadcast::channel(64);
-    let state = Arc::new(AppState { cfg, projects: RwLock::new(initial), tx, search, cortex });
+    let state = Arc::new(AppState {
+        cfg,
+        projects: RwLock::new(initial),
+        tx,
+        search,
+        cortex,
+        colony: RwLock::new(colony),
+    });
 
     if let Err(e) = watch::spawn(state.clone()) {
         error!("file watcher failed ({e:#}) — dashboard is static; POST /api/rescan to refresh");
     }
     tokio::spawn(build_index(state.clone()));
+    if state.cfg.colony.enabled {
+        tokio::spawn(colony_loop(state.clone()));
+    }
 
     let app = Router::new()
         .route("/api/projects", get(list_projects))
+        .route("/api/colony", get(colony_handler))
         .route("/api/rescan", post(rescan))
         .route("/api/search", get(search_handler))
         .route("/api/cortex", get(cortex_recall))
@@ -102,6 +125,47 @@ async fn main() -> Result<()> {
 
 async fn list_projects(State(state): State<Arc<AppState>>) -> Json<Vec<Project>> {
     Json(state.projects.read().await.clone())
+}
+
+async fn colony_handler(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<ColonyStatus>, ApiError> {
+    if !state.cfg.colony.enabled {
+        return Err((StatusCode::SERVICE_UNAVAILABLE, "colony panel disabled".into()));
+    }
+    Ok(Json(state.colony.read().await.clone()))
+}
+
+/// Periodic liveness sweep. Equal sweeps are suppressed like equal rescans —
+/// the timestamp still updates so /api/colony reports honest freshness, but
+/// nothing hits the WS unless a sibling actually changed state.
+async fn colony_loop(state: Arc<AppState>) {
+    let interval = state.cfg.colony.probe_interval_secs.max(5);
+    // First sweep almost immediately: the boot sweep runs before the daemon
+    // binds its own port, so Prefrontal would report itself down for a whole
+    // interval otherwise.
+    let mut delay = 2;
+    loop {
+        tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+        delay = interval;
+        let cfg = state.cfg.clone();
+        let projects = state.projects.read().await.clone();
+        let fresh =
+            match tokio::task::spawn_blocking(move || prefrontal_core::colony_status(&cfg, &projects))
+                .await
+            {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!("colony sweep panicked: {e}");
+                    continue;
+                }
+            };
+        let changed = fresh.siblings != state.colony.read().await.siblings;
+        *state.colony.write().await = fresh.clone();
+        if changed {
+            let _ = state.tx.send(Event::Colony { colony: fresh });
+        }
+    }
 }
 
 /// Full rescan on demand — the escape hatch when the watcher can't run
@@ -359,11 +423,22 @@ async fn ws_upgrade(
     ws.on_upgrade(move |socket| ws_session(socket, state))
 }
 
+/// Full state for one client: Snapshot, then Colony when the panel is on.
+/// Sent on connect and after a lagged receiver — covers all gaps either way.
+async fn send_full_state(socket: &mut WebSocket, state: &Arc<AppState>) -> Result<(), axum::Error> {
+    let snapshot = Event::Snapshot { projects: state.projects.read().await.clone() };
+    send_event(socket, &snapshot).await?;
+    if state.cfg.colony.enabled {
+        let colony = Event::Colony { colony: state.colony.read().await.clone() };
+        send_event(socket, &colony).await?;
+    }
+    Ok(())
+}
+
 async fn ws_session(mut socket: WebSocket, state: Arc<AppState>) {
     // Subscribe before snapshotting so no delta can fall between the two.
     let mut rx = state.tx.subscribe();
-    let snapshot = Event::Snapshot { projects: state.projects.read().await.clone() };
-    if send_event(&mut socket, &snapshot).await.is_err() {
+    if send_full_state(&mut socket, &state).await.is_err() {
         return;
     }
     loop {
@@ -375,8 +450,7 @@ async fn ws_session(mut socket: WebSocket, state: Arc<AppState>) {
                     }
                 }
                 Err(broadcast::error::RecvError::Lagged(_)) => {
-                    let snap = Event::Snapshot { projects: state.projects.read().await.clone() };
-                    if send_event(&mut socket, &snap).await.is_err() {
+                    if send_full_state(&mut socket, &state).await.is_err() {
                         break;
                     }
                 }

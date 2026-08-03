@@ -19,8 +19,8 @@
 use anyhow::{Context, Result};
 use futures_util::{Stream, StreamExt};
 pub use prefrontal_protocol::{
-    Activity, CommitSummary, CortexHit, DocContent, DocEntry, DocWriteResult, Event, GitInfo,
-    HealthFlag, Project, SearchHit,
+    Activity, ColonyStatus, CommitSummary, CortexHit, DocContent, DocEntry, DocWriteResult,
+    Event, GitInfo, HealthFlag, Project, SearchHit, Sibling, SiblingSurface,
 };
 
 pub struct Prefrontal {
@@ -78,6 +78,12 @@ impl Prefrontal {
     /// Errors with the daemon's 503 message when the feature is off.
     pub async fn recall(&self, query: &str) -> Result<Vec<CortexHit>> {
         self.get_json(&format!("/api/cortex?q={}", urlencode(query))).await
+    }
+
+    /// The -RS colony as seen from the daemon's machine: installed, live,
+    /// and how to reach each sibling. 503s when the panel is disabled.
+    pub async fn colony(&self) -> Result<ColonyStatus> {
+        self.get_json("/api/colony").await
     }
 
     /// Markdown/text docs of one project, README first.

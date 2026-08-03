@@ -14,20 +14,23 @@ Always check it before writing something that may already exist.
 
 1. **MCP tools** (if `mcp__prefrontal__*` are loaded): `list_projects`,
    `project_status`, `where_was_i`, `search`, `list_docs`, `read_doc`,
-   `write_doc`. Daemon-independent — they work even if nothing is running.
+   `write_doc`, `colony_status`. Daemon-independent — they work even if
+   nothing is running.
 2. **CLI** (daemon not required):
    ```sh
    prefrontal status              # every project: state, branch, dirty, flags
    prefrontal health              # only flagged projects (rot check)
    prefrontal timeline            # where-was-I, commits grouped by day
    prefrontal find <terms…>       # full-text + symbols across everything
+   prefrontal colony              # -RS siblings: installed / live / reach
    prefrontal recall <words…>     # semantic recall (optional cortex layer)
    ```
 3. **REST** — daemon at `http://127.0.0.1:7320`
    (check: `curl -sf 127.0.0.1:7320/api/projects`):
-   `GET /api/projects` · `GET /api/search?q=&limit=` · `GET /api/docs/{project}`
-   · `GET/PUT /api/doc/{project}/{path}` · `GET /api/cortex?q=` (503 = feature off)
-   · `POST /api/rescan`. Full reference: `docs/API.md` in the repo.
+   `GET /api/projects` · `GET /api/colony` · `GET /api/search?q=&limit=`
+   · `GET /api/docs/{project}` · `GET/PUT /api/doc/{project}/{path}`
+   · `GET /api/cortex?q=` (503 = feature off) · `POST /api/rescan`.
+   Full reference: `docs/API.md` in the repo.
 
 ## Knowledge you need
 
@@ -50,6 +53,11 @@ Always check it before writing something that may already exist.
   beyond; `archived` only via config override. **Health flags**: `no_git`,
   `no_remote`, `never_committed`, `dirty_pile(n)` — surface these when the
   user risks losing work.
+- **`colony_status` answers "is <sibling> running?"** for the -RS family
+  (Cerebro, Imaginarium, ApexRouter, Callosum, …): installed (checkout,
+  binary, or answering port — independent ORs), live right now (loopback
+  probe), and how to reach each (web UI URL / API port / MCP name / CLI).
+  Check it before assuming a sibling service is up or absent.
 - Config: `~/.config/prefrontal/config.toml` (central — no per-project
   dotfiles). Dashboard: `http://127.0.0.1:7320`.
 

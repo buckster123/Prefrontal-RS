@@ -141,3 +141,16 @@ Everything below is computed, never hand-maintained:
   (`list_projects`, `project_status`, `where_was_i`, `search`, `list_docs`,
   `read_doc`, `write_doc`), daemon-independent (direct scan, 10s cache).
   Registered for Claude Code via `~/Projects/.mcp.json` (release binary).
+- **2026-08-03** — Colony panel shipped (idea → survey → live checks → code,
+  same day: `docs/ideas/colony-panel.md` holds the receipts). Built-in roster
+  of the twelve -RS siblings in `core/colony.rs`; detection is an OR of
+  independent signals — checkout under a scan root, binary in PATH/known
+  install dirs, open loopback port — because dev installs proved any one can
+  be the whole story (apexrouter: live on `:8888`, no checkout). `[colony]`
+  config: enabled / probe interval / port overrides — ports only, hosts
+  hard-wired to 127.0.0.1 so probing can never be configured into LAN
+  scanning. Daemon sweeps (15 s default), suppresses equal sweeps via
+  protocol `PartialEq`, broadcasts `colony` WS events; connect sequence is
+  now Snapshot + Colony. Surfaces: `/api/colony`, ui-web drawer,
+  `prefrontal colony`, MCP `colony_status` (8th tool), SDK `colony()`.
+  NeuralSymphony-RS stays outside the roster deliberately (planning stage).
