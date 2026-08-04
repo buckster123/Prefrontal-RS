@@ -97,6 +97,17 @@ const ROSTER: &[Spec] = &[
         mcp: None,
     },
     Spec {
+        // Graduated from "deliberately outside the roster" 2026-08-04 at
+        // its M2 — the moment it grew a surface (planning-stage rule from
+        // docs/ideas/colony-panel.md Q4 honored both ways).
+        name: "NeuralSymphony-RS",
+        tagline: "your memory graph, as music",
+        surface: SiblingSurface::HttpApi,
+        port: Some(7664), // "SONG" on a phone keypad
+        binaries: &["neuralsymphony"],
+        mcp: Some("neuralsymphony"),
+    },
+    Spec {
         name: "Sonus-RS",
         tagline: "audio engine, MCP-first",
         surface: SiblingSurface::Mcp,

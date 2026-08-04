@@ -112,6 +112,10 @@ detection notes below.
    still at the planning/storming stage (a big-model suggestion that surfaced
    during hermes/ApexRouter testing on vast.ai, after the model noticed the
    garden). Revisit if it graduates to code.
+   **Revisited 2026-08-04: graduated.** Idea → PRD → M0/M1/M2 in one
+   session arc; it has an HTTP surface on :7664 now, so the roster grew to
+   thirteen. The planning-stage rule worked exactly as written, in both
+   directions.
 
 Related: the sibling landers at `apexaurum.no/<Slug>/` each document their own
 surfaces accurately as of 2026-08-03.

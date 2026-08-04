@@ -141,6 +141,10 @@ Everything below is computed, never hand-maintained:
   (`list_projects`, `project_status`, `where_was_i`, `search`, `list_docs`,
   `read_doc`, `write_doc`), daemon-independent (direct scan, 10s cache).
   Registered for Claude Code via `~/Projects/.mcp.json` (release binary).
+- **2026-08-04** — Colony roster grows to thirteen: NeuralSymphony-RS
+  graduated (per the panel idea-doc's own rule) the day it grew an HTTP
+  surface — `:7664`, MCP `neuralsymphony`, tagline "your memory graph, as
+  music".
 - **2026-08-03** — Colony panel shipped (idea → survey → live checks → code,
   same day: `docs/ideas/colony-panel.md` holds the receipts). Built-in roster
   of the twelve -RS siblings in `core/colony.rs`; detection is an OR of
