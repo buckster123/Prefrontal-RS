@@ -34,7 +34,9 @@ after being AFK:
 
 Plus: read, edit, and create markdown notes in-app — the dash commits them
 locally (that file only, never a push) so ideas survive the walk to the
-kitchen. AI agents get the same brain over MCP.
+kitchen. The **Repo** tab is a Magit-lite GUI over local git (status, diffs,
+history, read-only tree, stage/commit/branch/stash); Push stays off until
+`[git] allow_push`. AI agents get the same brain over MCP (git **reads** only).
 
 <div align="center">
 <img src="assets/screenshot-docs.png" alt="doc panel rendering a project README" width="90%">
@@ -49,6 +51,7 @@ kitchen. AI agents get the same brain over MCP.
 │  scanner ─ git (gix) ─ watcher (notify, per-dir)        │
 │  index (tantivy: code+docs+commits+symbols)             │
 │  notes engine (comrak render · pathspec auto-commit)    │
+│  working tree (gix + allowlisted git porcelain)         │
 │  [optional] CerebroCortex client (MCP, feature-flag)    │
 │  axum: REST + WS (:7320) + static ui-web                │
 └──────────────┬──────────────────────┬───────────────────┘

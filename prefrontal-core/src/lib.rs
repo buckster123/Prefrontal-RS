@@ -4,6 +4,7 @@ pub mod colony;
 pub mod config;
 pub mod cortex;
 pub mod docs;
+pub mod git;
 pub mod scan;
 pub mod search;
 pub mod symbols;

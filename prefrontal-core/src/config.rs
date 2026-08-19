@@ -20,6 +20,7 @@ pub struct Config {
     pub features: Features,
     pub cortex: CortexConfig,
     pub colony: ColonyConfig,
+    pub git: GitConfig,
     /// Keyed by project directory name.
     pub overrides: HashMap<String, ProjectOverride>,
 }
@@ -103,6 +104,15 @@ impl Default for ColonyConfig {
     }
 }
 
+/// Phase 7 working-tree porcelain. Fetch/Push stay dark until flipped
+/// (D8 zero-config + D9: network is never implicit).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct GitConfig {
+    /// When false, Push/Fetch buttons are visible but refuse with a reason.
+    pub allow_push: bool,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ProjectOverride {
@@ -125,6 +135,7 @@ impl Default for Config {
             features: Features::default(),
             cortex: CortexConfig::default(),
             colony: ColonyConfig::default(),
+            git: GitConfig::default(),
             overrides: HashMap::new(),
         }
     }

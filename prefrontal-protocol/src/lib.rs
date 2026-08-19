@@ -28,6 +28,13 @@ pub struct GitInfo {
     pub commit_count: Option<u32>,
     /// Fetch URL of `origin`, if any.
     pub remote: Option<String>,
+    /// Commits ahead of the upstream tracking branch, if one is set.
+    /// Filled when cheap; the Repo pane's `GitStatus` is the source of truth.
+    #[serde(default)]
+    pub ahead: Option<u32>,
+    /// Commits behind the upstream tracking branch, if one is set.
+    #[serde(default)]
+    pub behind: Option<u32>,
     /// Commits within the timeline window (config: days/cap), newest first.
     /// The "where was I" view derives from these — per project, so the
     /// watcher's per-project deltas keep the merged timeline live for free.
@@ -209,4 +216,165 @@ pub enum Event {
     /// Colony sweep result — sent on connect and whenever a sibling's state
     /// actually changed (equal sweeps are suppressed, same as rescans).
     Colony { colony: ColonyStatus },
+}
+
+/// How one side of a path (index or worktree) differs from its pair.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitChange {
+    None,
+    Modified,
+    Added,
+    Deleted,
+    Renamed,
+    Copied,
+    TypeChanged,
+    Untracked,
+    Unmerged,
+}
+
+/// One path in a working-tree status listing.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GitEntry {
+    pub path: String,
+    /// HEAD ↔ index.
+    pub index: GitChange,
+    /// Index ↔ worktree.
+    pub worktree: GitChange,
+    pub conflicted: bool,
+}
+
+/// One stash entry (`stash@{n}`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitStash {
+    pub index: u32,
+    pub message: String,
+}
+
+/// Full working-tree snapshot for the Repo pane. Not attached to `Project`
+/// — dirty paths stay off the garden WS snapshot.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GitStatus {
+    pub branch: Option<String>,
+    pub detached: bool,
+    pub upstream: Option<String>,
+    pub ahead: Option<u32>,
+    pub behind: Option<u32>,
+    pub merging: bool,
+    pub rebasing: bool,
+    /// True when `[git] allow_push` is on — Fetch/Push are live.
+    pub allow_push: bool,
+    pub entries: Vec<GitEntry>,
+    pub stashes: Vec<GitStash>,
+}
+
+/// A unified diff for one path.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitDiff {
+    pub path: String,
+    pub cached: bool,
+    pub rev: Option<String>,
+    pub patch: String,
+    pub binary: bool,
+    pub truncated: bool,
+}
+
+/// One file touched by a commit (patch lives on `GET .../diff?rev=`).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitCommitFile {
+    pub path: String,
+    pub status: GitChange,
+}
+
+/// Author + body + file list for one commit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitCommitDetail {
+    pub id: String,
+    pub short_id: String,
+    pub summary: String,
+    pub body: Option<String>,
+    pub author: String,
+    pub author_email: String,
+    pub time_unix: i64,
+    pub parents: Vec<String>,
+    pub files: Vec<GitCommitFile>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitRefKind {
+    Local,
+    Remote,
+    Tag,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitRef {
+    pub name: String,
+    pub kind: GitRefKind,
+    pub current: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitTreeKind {
+    File,
+    Dir,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitTreeEntry {
+    pub path: String,
+    pub kind: GitTreeKind,
+    pub size: Option<u64>,
+}
+
+/// A file at a revision (or `WORKTREE` for the on-disk path).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitFile {
+    pub path: String,
+    pub rev: String,
+    pub text: String,
+    pub binary: bool,
+    pub truncated: bool,
+}
+
+/// Honest result of an allowlisted porcelain write.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitOpResult {
+    pub ok: bool,
+    pub detail: Option<String>,
+    pub commit_id: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitPaths {
+    pub paths: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitCommitRequest {
+    pub message: String,
+    #[serde(default)]
+    pub paths: Option<Vec<String>>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitSwitchRequest {
+    pub name: String,
+    #[serde(default)]
+    pub create: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum GitStashAction {
+    Push,
+    Pop,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GitStashRequest {
+    pub action: GitStashAction,
+    pub message: Option<String>,
 }

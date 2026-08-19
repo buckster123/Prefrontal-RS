@@ -20,7 +20,9 @@ use anyhow::{Context, Result};
 use futures_util::{Stream, StreamExt};
 pub use prefrontal_protocol::{
     Activity, ColonyStatus, CommitSummary, CortexHit, DocContent, DocEntry, DocWriteResult,
-    Event, GitInfo, HealthFlag, Project, SearchHit, Sibling, SiblingSurface,
+    Event, GitCommitDetail, GitCommitRequest, GitDiff, GitFile, GitInfo, GitOpResult, GitPaths,
+    GitRef, GitStashRequest, GitStatus, GitSwitchRequest, GitTreeEntry, HealthFlag, Project,
+    SearchHit, Sibling, SiblingSurface,
 };
 
 pub struct Prefrontal {
@@ -99,6 +101,81 @@ impl Prefrontal {
             encode_path(path)
         ))
         .await
+    }
+
+    pub async fn git_status(&self, project: &str) -> Result<GitStatus> {
+        self.get_json(&format!("/api/git/{}/status", urlencode(project)))
+            .await
+    }
+
+    pub async fn git_diff(
+        &self,
+        project: &str,
+        path: &str,
+        cached: bool,
+        rev: Option<&str>,
+    ) -> Result<GitDiff> {
+        let mut q = format!(
+            "/api/git/{}/diff?path={}&cached={cached}",
+            urlencode(project),
+            urlencode(path)
+        );
+        if let Some(r) = rev {
+            q.push_str(&format!("&rev={}", urlencode(r)));
+        }
+        self.get_json(&q).await
+    }
+
+    pub async fn git_log(&self, project: &str, limit: u32, skip: u32) -> Result<Vec<CommitSummary>> {
+        self.get_json(&format!(
+            "/api/git/{}/log?limit={limit}&skip={skip}",
+            urlencode(project)
+        ))
+        .await
+    }
+
+    pub async fn git_commit(&self, project: &str, id: &str) -> Result<GitCommitDetail> {
+        self.get_json(&format!(
+            "/api/git/{}/commit/{}",
+            urlencode(project),
+            urlencode(id)
+        ))
+        .await
+    }
+
+    pub async fn git_refs(&self, project: &str) -> Result<Vec<GitRef>> {
+        self.get_json(&format!("/api/git/{}/refs", urlencode(project)))
+            .await
+    }
+
+    pub async fn git_tree(
+        &self,
+        project: &str,
+        rev: Option<&str>,
+        path: Option<&str>,
+    ) -> Result<Vec<GitTreeEntry>> {
+        let mut q = format!("/api/git/{}/tree", urlencode(project));
+        let mut sep = '?';
+        if let Some(r) = rev {
+            q.push_str(&format!("{sep}rev={}", urlencode(r)));
+            sep = '&';
+        }
+        if let Some(p) = path {
+            q.push_str(&format!("{sep}path={}", urlencode(p)));
+        }
+        self.get_json(&q).await
+    }
+
+    pub async fn git_file(&self, project: &str, path: &str, rev: Option<&str>) -> Result<GitFile> {
+        let mut q = format!(
+            "/api/git/{}/file?path={}",
+            urlencode(project),
+            urlencode(path)
+        );
+        if let Some(r) = rev {
+            q.push_str(&format!("&rev={}", urlencode(r)));
+        }
+        self.get_json(&q).await
     }
 
     /// Create or update a doc; the daemon commits it locally (never pushes).

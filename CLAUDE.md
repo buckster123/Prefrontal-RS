@@ -22,13 +22,16 @@ rendering), `prefrontal-cli` (humans + `mcp` stdio server for agents),
 ## Invariants — break these and you've broken the product
 
 - **Localhost only.** Nothing ever binds beyond 127.0.0.1; no telemetry.
-- **Path inputs are hostile.** Every project-relative path goes through
-  `docs::resolve_rel_path`: relative, no `..`, extension allow-listed,
-  symlink-escape checked. Projects are addressed by *name*, resolved only
-  through the scan cache — clients never send filesystem paths.
+- **Path inputs are hostile.** Doc paths go through `docs::resolve_rel_path`
+  (relative, no `..`, extension allow-listed, symlink-escape checked). Git
+  pathspecs go through `git::resolve_repo_rel` / `validate_repo_rel` — same
+  guards, no extension allow-list, no magic `:(` / `:!` / globs. Projects
+  are addressed by *name*, resolved only through the scan cache — clients
+  never send filesystem paths.
 - **Note commits are pathspec-scoped** (`git add -- <file> && git commit
   -- <file>`, message `[prefrontal] note: <path>`) so they can NEVER sweep up
-  staged work. Never push. Report `committed: false` honestly with the reason.
+  staged work. Notes never push. Repo-tab Push is explicit, never `--force`,
+  gated by `[git] allow_push` (default off). Report failures honestly.
 - **The index is a cache, never truth** — schema mismatch wipes and rebuilds
   (`search::open`). Any schema change is therefore safe but costs a rebuild.
 - **Central config only** (`~/.config/prefrontal/config.toml`); no
@@ -40,9 +43,9 @@ rendering), `prefrontal-cli` (humans + `mcp` stdio server for agents),
   must not. The dashboard origin can write files; a hostile README must never
   execute in it.
 - **Pure Rust, no C linking** (D7): gix not libgit2, regex symbols not
-  tree-sitter, comrak not a JS renderer. The one sanctioned exception is the
-  system `git` shell-out for note commits (identity/hooks for free) — and
-  Slint, confined to `ui-slint` (see LICENSE note).
+  tree-sitter, comrak not a JS renderer. Sanctioned `git` shell-outs: note
+  commits, complete status (`porcelain=v2`), unified diffs, and the
+  allowlisted porcelain writes (identity/hooks). Slint stays in `ui-slint`.
 - **Typography**: body text is system sans (~1.5–1.6 line-height); monospace
   strictly inside code blocks. This is an accessibility decision (owner's
   eyes), not taste.
@@ -52,7 +55,10 @@ rendering), `prefrontal-cli` (humans + `mcp` stdio server for agents),
 - `core/scan.rs` — scanner. Activity derives from last-touch (7/30/180d);
   health flags: no_git, no_remote, never_committed, dirty_pile. Tagline =
   first `###` or first paragraph of README, HTML-stripped. `SKIP_DIRS` is THE
-  shared skip list (watcher + docs walk + indexer).
+  shared skip list (watcher + docs walk + indexer + repo tree).
+- `core/git.rs` — phase 7 working tree. Reads: gix log/refs/tree/blob +
+  `git status --porcelain=v2` / `git diff` (dated exception). Writes: allowlisted
+  `git -C` only. CLI/MCP are **reads only**.
 - `prefrontald/watch.rs` — per-directory watches (NEVER blanket-recursive:
   `target/` would eat inotify), `.git` watched surgically (dir non-recursive
   + `refs/` recursive → commits/branch-switches register without object-store

@@ -14,8 +14,9 @@ Always check it before writing something that may already exist.
 
 1. **MCP tools** (if `mcp__prefrontal__*` are loaded): `list_projects`,
    `project_status`, `where_was_i`, `search`, `list_docs`, `read_doc`,
-   `write_doc`, `colony_status`. Daemon-independent — they work even if
-   nothing is running.
+   `write_doc`, `colony_status`, plus read-only `git_status`, `git_diff`,
+   `git_log`, `git_show`, `git_tree`, `git_file`. Daemon-independent — they
+   work even if nothing is running. Git **writes** stay in the web Repo tab.
 2. **CLI** (daemon not required):
    ```sh
    prefrontal status              # every project: state, branch, dirty, flags
@@ -24,12 +25,15 @@ Always check it before writing something that may already exist.
    prefrontal find <terms…>       # full-text + symbols across everything
    prefrontal colony              # -RS siblings: installed / live / reach
    prefrontal recall <words…>     # semantic recall (optional cortex layer)
+   prefrontal git status <proj>   # working-tree paths (read-only)
+   prefrontal git diff|log|show|tree|file
    ```
 3. **REST** — daemon at `http://127.0.0.1:7320`
    (check: `curl -sf 127.0.0.1:7320/api/projects`):
    `GET /api/projects` · `GET /api/colony` · `GET /api/search?q=&limit=`
    · `GET /api/docs/{project}` · `GET/PUT /api/doc/{project}/{path}`
-   · `GET /api/cortex?q=` (503 = feature off) · `POST /api/rescan`.
+   · `GET /api/cortex?q=` (503 = feature off) · `POST /api/rescan`
+   · `GET /api/git/{project}/status|diff|log|commit|refs|tree|file`.
    Full reference: `docs/API.md` in the repo.
 
 ## Knowledge you need

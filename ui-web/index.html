@@ -71,16 +71,20 @@
     <div class="panel" role="dialog" aria-modal="true">
       <header class="panel-head">
         <span class="panel-title" id="panel-title"></span>
+        <nav class="panel-tabs" aria-label="project surface">
+          <button type="button" id="tab-notes" class="tab sel">Notes</button>
+          <button type="button" id="tab-repo" class="tab">Repo</button>
+        </nav>
         <span class="panel-path" id="panel-path"></span>
-        <span class="panel-actions">
+        <span class="panel-actions" id="notes-actions">
           <button id="btn-new" type="button">＋ note</button>
           <button id="btn-edit" type="button" hidden>edit</button>
           <button id="btn-save" type="button" hidden>save</button>
           <button id="btn-cancel" type="button" hidden>cancel</button>
-          <button id="btn-close" type="button" title="close (Esc)">✕</button>
         </span>
+        <button id="btn-close" type="button" title="close (Esc)">✕</button>
       </header>
-      <div class="panel-body">
+      <div class="panel-body" id="notes-body">
         <nav class="doc-list" id="doc-list"></nav>
         <div class="doc-main">
           <input id="doc-filename" class="doc-filename" hidden
@@ -90,12 +94,39 @@
                     spellcheck="false" placeholder="capture it before it evaporates…"></textarea>
         </div>
       </div>
-      <footer class="panel-status" id="panel-status"></footer>
+      <div class="panel-body repo-body" id="repo-body" hidden>
+        <aside class="repo-side">
+          <div class="repo-side-tabs">
+            <button type="button" id="repo-mode-wt" class="tab sel">Working tree</button>
+            <button type="button" id="repo-mode-files" class="tab">Files</button>
+          </div>
+          <div id="repo-banner" class="repo-banner" hidden></div>
+          <div id="repo-branches" class="repo-branches"></div>
+          <div id="repo-status" class="repo-status"></div>
+          <div id="repo-tree" class="repo-tree" hidden></div>
+        </aside>
+        <div class="repo-main">
+          <pre id="repo-view" class="source"></pre>
+        </div>
+      </div>
+      <footer class="panel-foot">
+        <div class="repo-commit-bar" id="repo-commit-bar" hidden>
+          <textarea id="repo-msg" class="repo-msg" rows="2" spellcheck="false"
+                    placeholder="commit message"></textarea>
+          <div class="repo-commit-actions">
+            <button type="button" id="btn-repo-commit">commit</button>
+            <button type="button" id="btn-repo-stash">stash</button>
+            <button type="button" id="btn-repo-fetch" disabled title="enable [git] allow_push">fetch</button>
+            <button type="button" id="btn-repo-push" disabled title="enable [git] allow_push">push</button>
+          </div>
+        </div>
+        <div class="panel-status" id="panel-status"></div>
+      </footer>
     </div>
   </div>
 
   <footer class="foot">
-    <span id="foot-note">Prefrontal-RS · phase 2: notes · 127.0.0.1 only</span>
+    <span id="foot-note">Prefrontal-RS · phase 7: working tree · 127.0.0.1 only</span>
   </footer>
 
   <script src="app.js"></script>

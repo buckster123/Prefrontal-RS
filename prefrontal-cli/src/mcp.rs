@@ -1,6 +1,6 @@
 //! `prefrontal mcp` — an MCP stdio server (newline-delimited JSON-RPC 2.0).
 //!
-//! Hand-rolled on purpose: the surface is seven tools and four methods, and
+//! Hand-rolled on purpose: garden tools plus read-only git, and four methods, and
 //! the daemon isn't required — every tool works from a direct scan, so agents
 //! get answers even when nothing else is running. Scans are cached briefly;
 //! an agent turn firing several tools shouldn't pay for several scans.
@@ -117,6 +117,29 @@ impl Server {
             "read_doc" => self.tool_read_doc(&s("project"), &s("path")),
             "write_doc" => self.tool_write_doc(&s("project"), &s("path"), &s("content")),
             "colony_status" => self.tool_colony_status(),
+            "git_status" => self.tool_git_status(&s("project")),
+            "git_diff" => self.tool_git_diff(
+                &s("project"),
+                &s("path"),
+                args.get("cached").and_then(|v| v.as_bool()).unwrap_or(false),
+                args.get("rev").and_then(|v| v.as_str()),
+            ),
+            "git_log" => {
+                let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as u32;
+                let skip = args.get("skip").and_then(|v| v.as_u64()).unwrap_or(0) as u32;
+                self.tool_git_log(&s("project"), limit, skip)
+            }
+            "git_show" => self.tool_git_show(&s("project"), &s("id")),
+            "git_tree" => self.tool_git_tree(
+                &s("project"),
+                args.get("rev").and_then(|v| v.as_str()),
+                args.get("path").and_then(|v| v.as_str()),
+            ),
+            "git_file" => self.tool_git_file(
+                &s("project"),
+                &s("path"),
+                args.get("rev").and_then(|v| v.as_str()),
+            ),
             _ => Err(format!("unknown tool: {name}")),
         };
         match outcome {
@@ -228,6 +251,70 @@ impl Server {
         Ok(serde_json::to_string_pretty(&colony).unwrap_or_default())
     }
 
+    fn tool_git_status(&mut self, project: &str) -> Result<String, String> {
+        let dir = self
+            .project_dir(project)
+            .ok_or_else(|| format!("unknown project: {project}"))?;
+        let st = prefrontal_core::git::status(&dir, false).map_err(|e| format!("{e:#}"))?;
+        Ok(serde_json::to_string_pretty(&st).unwrap_or_default())
+    }
+
+    fn tool_git_diff(
+        &mut self,
+        project: &str,
+        path: &str,
+        cached: bool,
+        rev: Option<&str>,
+    ) -> Result<String, String> {
+        let dir = self
+            .project_dir(project)
+            .ok_or_else(|| format!("unknown project: {project}"))?;
+        let d = prefrontal_core::git::diff(&dir, path, cached, rev).map_err(|e| format!("{e:#}"))?;
+        Ok(serde_json::to_string_pretty(&d).unwrap_or_default())
+    }
+
+    fn tool_git_log(&mut self, project: &str, limit: u32, skip: u32) -> Result<String, String> {
+        let dir = self
+            .project_dir(project)
+            .ok_or_else(|| format!("unknown project: {project}"))?;
+        let log = prefrontal_core::git::log(&dir, limit, skip).map_err(|e| format!("{e:#}"))?;
+        Ok(serde_json::to_string_pretty(&log).unwrap_or_default())
+    }
+
+    fn tool_git_show(&mut self, project: &str, id: &str) -> Result<String, String> {
+        let dir = self
+            .project_dir(project)
+            .ok_or_else(|| format!("unknown project: {project}"))?;
+        let c = prefrontal_core::git::commit_detail(&dir, id).map_err(|e| format!("{e:#}"))?;
+        Ok(serde_json::to_string_pretty(&c).unwrap_or_default())
+    }
+
+    fn tool_git_tree(
+        &mut self,
+        project: &str,
+        rev: Option<&str>,
+        path: Option<&str>,
+    ) -> Result<String, String> {
+        let dir = self
+            .project_dir(project)
+            .ok_or_else(|| format!("unknown project: {project}"))?;
+        let t = prefrontal_core::git::tree(&dir, rev, path).map_err(|e| format!("{e:#}"))?;
+        Ok(serde_json::to_string_pretty(&t).unwrap_or_default())
+    }
+
+    fn tool_git_file(
+        &mut self,
+        project: &str,
+        path: &str,
+        rev: Option<&str>,
+    ) -> Result<String, String> {
+        let dir = self
+            .project_dir(project)
+            .ok_or_else(|| format!("unknown project: {project}"))?;
+        let f = prefrontal_core::git::file_at(&dir, rev, path).map_err(|e| format!("{e:#}"))?;
+        Ok(serde_json::to_string_pretty(&f).unwrap_or_default())
+    }
+
     fn tool_write_doc(&mut self, project: &str, path: &str, content: &str) -> Result<String, String> {
         let dir = self
             .project_dir(project)
@@ -291,6 +378,56 @@ fn tool_definitions() -> Vec<Value> {
             "name": "colony_status",
             "description": "Which sibling -RS services are installed on this machine, whether each is live RIGHT NOW (loopback probe), and how to reach it: web UI URL, HTTP API port, MCP server name, or CLI binary. Ask this before assuming a sibling like Cerebro or Imaginarium is (or isn't) running.",
             "inputSchema": obj(json!({}), &[]),
+        }),
+        json!({
+            "name": "git_status",
+            "description": "Working-tree status for one project: staged/unstaged/untracked paths, ahead/behind, stash list. Read-only.",
+            "inputSchema": obj(json!({ "project": { "type": "string" } }), &["project"]),
+        }),
+        json!({
+            "name": "git_diff",
+            "description": "Unified diff for one path. cached=true is the index vs HEAD; rev shows that commit's patch.",
+            "inputSchema": obj(json!({
+                "project": { "type": "string" },
+                "path": { "type": "string" },
+                "cached": { "type": "boolean" },
+                "rev": { "type": "string" }
+            }), &["project", "path"]),
+        }),
+        json!({
+            "name": "git_log",
+            "description": "Recent commits for one project (id + summary + time).",
+            "inputSchema": obj(json!({
+                "project": { "type": "string" },
+                "limit": { "type": "integer" },
+                "skip": { "type": "integer" }
+            }), &["project"]),
+        }),
+        json!({
+            "name": "git_show",
+            "description": "One commit: author, body, files changed. Read-only.",
+            "inputSchema": obj(json!({
+                "project": { "type": "string" },
+                "id": { "type": "string", "description": "commit id (full or abbreviated)" }
+            }), &["project", "id"]),
+        }),
+        json!({
+            "name": "git_tree",
+            "description": "Directory listing at a revision (default HEAD). Read-only.",
+            "inputSchema": obj(json!({
+                "project": { "type": "string" },
+                "rev": { "type": "string" },
+                "path": { "type": "string" }
+            }), &["project"]),
+        }),
+        json!({
+            "name": "git_file",
+            "description": "Read a file at a revision (default HEAD) or rev=WORKTREE. Read-only; no edit.",
+            "inputSchema": obj(json!({
+                "project": { "type": "string" },
+                "path": { "type": "string" },
+                "rev": { "type": "string" }
+            }), &["project", "path"]),
         }),
     ]
 }
