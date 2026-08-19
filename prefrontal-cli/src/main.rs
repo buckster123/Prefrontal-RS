@@ -45,6 +45,50 @@ enum Command {
     },
     /// Push/update every project's summary into the cortex
     CortexSync,
+    /// Local git reads (v1 is read-only — writes stay in the Repo tab)
+    Git {
+        #[command(subcommand)]
+        cmd: GitCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum GitCmd {
+    /// Working-tree status with paths
+    Status { project: String },
+    /// Unified diff for one path
+    Diff {
+        project: String,
+        path: String,
+        #[arg(long)]
+        cached: bool,
+        #[arg(long)]
+        rev: Option<String>,
+    },
+    /// Recent commits
+    Log {
+        project: String,
+        #[arg(long, default_value_t = 20)]
+        limit: u32,
+        #[arg(long, default_value_t = 0)]
+        skip: u32,
+    },
+    /// One commit: author, body, files
+    Show { project: String, id: String },
+    /// Directory listing at a revision
+    Tree {
+        project: String,
+        #[arg(long)]
+        rev: Option<String>,
+        path: Option<String>,
+    },
+    /// Read a file at a revision (or WORKTREE)
+    File {
+        project: String,
+        path: String,
+        #[arg(long)]
+        rev: Option<String>,
+    },
 }
 
 fn main() -> Result<()> {
@@ -107,6 +151,113 @@ fn main() -> Result<()> {
                 println!("  synced {}", p.name);
             }
             println!("cortex sync done — {created} created, {updated} updated");
+        }
+        Command::Git { cmd } => git_cmd(&projects, cmd)?,
+    }
+    Ok(())
+}
+
+fn project_named<'a>(projects: &'a [Project], name: &str) -> Result<&'a Project> {
+    projects
+        .iter()
+        .find(|p| p.name == name)
+        .with_context(|| format!("unknown project: {name}"))
+}
+
+fn git_cmd(projects: &[Project], cmd: GitCmd) -> Result<()> {
+    use prefrontal_core::git as pg;
+    match cmd {
+        GitCmd::Status { project } => {
+            let p = project_named(projects, &project)?;
+            let st = pg::status(std::path::Path::new(&p.path), false)?;
+            let head = st
+                .branch
+                .clone()
+                .unwrap_or_else(|| if st.detached { "detached".into() } else { "?".into() });
+            let ab = match (st.ahead, st.behind) {
+                (Some(a), Some(b)) => format!(" ↑{a} ↓{b}"),
+                (Some(a), None) => format!(" ↑{a}"),
+                (None, Some(b)) => format!(" ↓{b}"),
+                _ => String::new(),
+            };
+            println!(
+                "{}  {}{}{}",
+                p.name,
+                head,
+                st.upstream.as_deref().map(|u| format!("…{u}")).unwrap_or_default(),
+                ab
+            );
+            if st.merging {
+                println!("  merge in progress — resolve in your editor");
+            }
+            if st.rebasing {
+                println!("  rebase in progress — resolve in your editor");
+            }
+            for e in &st.entries {
+                let mark = if e.conflicted { "conflict" } else { "" };
+                println!(
+                    "  {:<10} {:<10} {}{}",
+                    format!("{:?}", e.index).to_lowercase(),
+                    format!("{:?}", e.worktree).to_lowercase(),
+                    e.path,
+                    if mark.is_empty() { String::new() } else { format!("  {mark}") }
+                );
+            }
+            if st.entries.is_empty() {
+                println!("  clean");
+            }
+        }
+        GitCmd::Diff { project, path, cached, rev } => {
+            let p = project_named(projects, &project)?;
+            let d = pg::diff(std::path::Path::new(&p.path), &path, cached, rev.as_deref())?;
+            if d.binary {
+                println!("binary: {}", d.path);
+            } else {
+                print!("{}", d.patch);
+                if d.truncated {
+                    println!("\n… truncated");
+                }
+            }
+        }
+        GitCmd::Log { project, limit, skip } => {
+            let p = project_named(projects, &project)?;
+            for c in pg::log(std::path::Path::new(&p.path), limit, skip)? {
+                println!("{}  {}", c.id, c.summary);
+            }
+        }
+        GitCmd::Show { project, id } => {
+            let p = project_named(projects, &project)?;
+            let c = pg::commit_detail(std::path::Path::new(&p.path), &id)?;
+            println!("{}  {}", c.short_id, c.summary);
+            println!("{} <{}>", c.author, c.author_email);
+            if let Some(body) = &c.body {
+                println!("\n{body}\n");
+            }
+            for f in &c.files {
+                println!("  {:?}  {}", f.status, f.path);
+            }
+        }
+        GitCmd::Tree { project, rev, path } => {
+            let p = project_named(projects, &project)?;
+            for e in pg::tree(std::path::Path::new(&p.path), rev.as_deref(), path.as_deref())? {
+                let kind = match e.kind {
+                    prefrontal_protocol::GitTreeKind::Dir => "dir ",
+                    prefrontal_protocol::GitTreeKind::File => "file",
+                };
+                println!("{kind}  {}", e.path);
+            }
+        }
+        GitCmd::File { project, path, rev } => {
+            let p = project_named(projects, &project)?;
+            let f = pg::file_at(std::path::Path::new(&p.path), rev.as_deref(), &path)?;
+            if f.binary {
+                println!("binary: {}", f.path);
+            } else {
+                print!("{}", f.text);
+                if f.truncated {
+                    println!("\n… truncated");
+                }
+            }
         }
     }
     Ok(())

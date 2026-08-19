@@ -29,7 +29,9 @@ and expose the same brain to agents via MCP + CLI.
 
 - Not a kanban/PM tool, no tickets, no time tracking.
 - No cloud, no accounts, no telemetry. `127.0.0.1` only.
-- Not an IDE. Editing is for notes/docs; code editing stays in real editors.
+- Not an IDE. Notes remain the only content editor; the repo browser is
+  read-only. Code editing stays in real editors. Git porcelain (stage / commit /
+  switch / stash / explicit push) is first-class, not a side door through notes.
 - No Electron, no bundled Chromium. The web UI is plain static assets served by the daemon.
 
 ---
@@ -46,7 +48,7 @@ and expose the same brain to agents via MCP + CLI.
 | D6 | **CerebroCortex-RS integration is optional and feature-flagged** (`features.cerebro`, default off) | Must be useful to people without a Cerebro on their system if this goes public. Core search (tantivy + tree-sitter) has zero Cerebro dependency. |
 | D7 | **Pure-Rust backend** (`gix`, not libgit2; tantivy; tree-sitter) | ApexOS ethos: one toolchain, no C library linking pain. |
 | D8 | **Zero config to first paint** | Point it at a root (default `~/Projects`), get a dashboard. Overrides are opt-in polish. |
-| D9 | **The dash commits notes itself** — local commit always (`[prefrontal]` prefix), push is optional/configurable | Idea-capture must not depend on remembering to commit. |
+| D9 | **The dash commits notes itself** — local commit always (`[prefrontal]` prefix), never push. Human **Push** in the Repo tab is explicit-per-click, never `--force`, gated by `[git] allow_push` (default off) | Idea-capture must not depend on remembering to commit. Auto-commits never leave the machine. Network is a separate, opt-in verb. |
 
 ## Architecture
 
@@ -56,6 +58,7 @@ and expose the same brain to agents via MCP + CLI.
 │  scanner ── git (gix) ── watcher (notify)               │
 │  index (tantivy) ── symbols (tree-sitter)               │
 │  notes engine (md + auto-commit)                        │
+│  working tree (gix reads + allowlisted git porcelain)   │
 │  [feature: cerebro] ── CerebroCortex-RS client          │
 │  axum: REST + WS (:7320) + static ui-web                │
 └──────────────┬──────────────────────┬───────────────────┘
@@ -95,12 +98,13 @@ Everything below is computed, never hand-maintained:
 | **4. Agents** | MCP stdio server in the CLI: `project_list`, `project_status`, `where_was_i`, `search_code`, `find_symbol`, `read_doc`, `write_doc`. | A Claude session answers "do we already have X?" from Prefrontal instead of grepping. |
 | **5. Slint** | `ui-slint` over the same WS protocol: dashboard, browse, read (text-rendered md). No editing. | Runs on a pure ApexOS setup with no browser. |
 | **6. Cortex** *(optional, feature-flag)* | Ingest project summaries + docs into CerebroCortex-RS; semantic "that thing where I…" queries alongside lexical search. | Vague memory queries beat grep. |
+| **7. Working tree** | Local-git GUI: dirty paths, diffs, log, read-only tree, Magit-lite porcelain (stage / commit / switch / stash), explicit Push/Fetch behind `[git] allow_push`. | Opening a dirty project on `:7320` shows *which* files and the patch, and you can commit or switch branch without a terminal. |
 
 ## Open questions (not blocking phase 1)
 
 - Local-LLM "you were mid-way through X" resume blurbs (ecosystem inference stack) — nice-to-have, phase 6+.
 - Multiple roots (e.g. add `~/Projects-archive`) — config supports a list from day one, UI grouping TBD.
-- Push policy for auto-committed notes (never / ask / always-per-project) — default **never push**, revisit in phase 2.
+- Push policy for auto-committed notes: **never**. Human Push is a different verb (Phase 7, `[git] allow_push`).
 
 ## Decisions log
 
@@ -158,3 +162,27 @@ Everything below is computed, never hand-maintained:
   now Snapshot + Colony. Surfaces: `/api/colony`, ui-web drawer,
   `prefrontal colony`, MCP `colony_status` (8th tool), SDK `colony()`.
   NeuralSymphony-RS stays outside the roster deliberately (planning stage).
+- **2026-08-19** — Phase 7 "Working tree" shipped. The garden already answered
+  "which beds are dirty?"; it did not answer "what is dirty, what is the
+  patch, and can I put this repo in a state I trust before I open the
+  editor?" Notes could not fill that hole. New `core/git.rs`: reads via gix
+  (log, refs, tree, blob-at-rev, merge/rebase state) plus a dated porcelain
+  exception for complete status (`git status --porcelain=v2`) and unified
+  diffs (`git diff` / `git diff --cached` / `git show`) — gix's
+  index-worktree iterator is what the scanner already `.count()`s, and it
+  misses HEAD↔index (staged-only) changes. Writes are an allowlisted
+  `git -C <project>` surface (identity/hooks for free, same hole as notes):
+  `add -- <paths>`, `restore --staged -- <paths>`, `commit -m` (index or
+  pathspec), `switch` / `switch -c`, `stash push|pop`, and `push`/`fetch`
+  only when `[git] allow_push = true`. Never `-A`, `.`, `--force`,
+  `--force-with-lease`, reset, clean, or free-form argv. Pathspecs go
+  through `resolve_repo_rel` (relative, no `..`, no magic `:(` / `:!` /
+  globs, symlink-escape checked) — no extension allow-list, because this
+  is the working tree, not notes. **D9 amendment:** notes still never
+  push; the Repo tab's Push is explicit-per-click, default-disabled in
+  config (D8 zero-config stays safe). CLI/MCP v1 is **reads only**
+  (`status` / `diff` / `log` / `show` / `tree` / `file`) — agents already
+  have `write_doc`; giving them `git add` is how a session sweeps a dirty
+  garden. ui-web overlay gains Notes | Repo; dirty projects land on Repo.
+  Timeline / health / search commit and code hits click through. Slint
+  stays garden-only (D4). Receipts: `docs/ideas/working-tree.md`.

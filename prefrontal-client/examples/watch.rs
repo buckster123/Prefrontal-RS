@@ -19,6 +19,7 @@ async fn main() -> anyhow::Result<()> {
             Event::Snapshot { projects } => println!("snapshot: {} projects", projects.len()),
             Event::ProjectChanged { project } => println!("changed: {}", project.name),
             Event::ProjectRemoved { path } => println!("removed: {path}"),
+            Event::Colony { colony } => println!("colony: {} siblings", colony.siblings.len()),
         }
     }
     Ok(())

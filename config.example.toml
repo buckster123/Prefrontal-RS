@@ -43,6 +43,11 @@ probe_interval_secs = 15
 # [cortex.env]
 # CEREBRO_DATA_DIR = "/path/to/cortex/data"
 
+# Phase 7 working tree: Fetch/Push stay disabled until you flip this.
+# Notes still never push. The Repo tab's Push is explicit-per-click, never --force.
+[git]
+allow_push = false
+
 # Per-project overrides live centrally — projects stay unpolluted (charter D5).
 # [overrides.mecha-ai]
 # status = "parked"                 # pin regardless of activity math ("archived" also valid)

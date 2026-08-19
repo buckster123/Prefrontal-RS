@@ -186,7 +186,40 @@ fn git_info(dir: &Path, cfg: &Config) -> Option<GitInfo> {
         .and_then(|p| p.into_index_worktree_iter(Vec::new()).ok())
         .map(|iter| iter.filter_map(Result::ok).count() as u32);
 
-    Some(GitInfo { branch, last_commit_unix, dirty_files, commit_count, remote, recent_commits })
+    let (ahead, behind) = ahead_behind(dir);
+
+    Some(GitInfo {
+        branch,
+        last_commit_unix,
+        dirty_files,
+        commit_count,
+        remote,
+        ahead,
+        behind,
+        recent_commits,
+    })
+}
+
+/// `git rev-list --left-right --count @{upstream}...HEAD` → (ahead, behind).
+/// One spawn; fails closed (no upstream) as `(None, None)`.
+fn ahead_behind(dir: &Path) -> (Option<u32>, Option<u32>) {
+    let Ok(out) = std::process::Command::new("git")
+        .arg("-C")
+        .arg(dir)
+        .args(["rev-list", "--left-right", "--count", "@{upstream}...HEAD"])
+        .output()
+    else {
+        return (None, None);
+    };
+    if !out.status.success() {
+        return (None, None);
+    }
+    let line = String::from_utf8_lossy(&out.stdout);
+    let mut parts = line.split_whitespace();
+    // first = reachable from upstream not HEAD (behind); second = from HEAD not upstream (ahead)
+    let behind = parts.next().and_then(|s| s.parse().ok());
+    let ahead = parts.next().and_then(|s| s.parse().ok());
+    (ahead, behind)
 }
 
 /// Manifest-based detection; checks the project root and one level down

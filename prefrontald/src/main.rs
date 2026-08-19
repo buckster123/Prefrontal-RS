@@ -17,8 +17,8 @@ use prefrontal_core::cortex::CortexClient;
 use prefrontal_core::search::SearchIndex;
 use prefrontal_core::{scan_all, Config};
 use prefrontal_protocol::{
-    ColonyStatus, CortexHit, DocContent, DocEntry, DocWrite, DocWriteResult, Event, Project,
-    SearchHit,
+    ColonyStatus, CortexHit, DocContent, DocEntry, DocWrite, DocWriteResult, Event,
+    GitCommitRequest, GitPaths, GitStashRequest, GitSwitchRequest, Project, SearchHit,
 };
 use tokio::sync::{broadcast, RwLock};
 use tower_http::services::ServeDir;
@@ -110,6 +110,20 @@ async fn main() -> Result<()> {
         .route("/api/cortex/sync", post(cortex_sync))
         .route("/api/docs/{project}", get(list_docs))
         .route("/api/doc/{project}/{*path}", get(read_doc).put(write_doc))
+        .route("/api/git/{project}/status", get(git_status))
+        .route("/api/git/{project}/diff", get(git_diff))
+        .route("/api/git/{project}/log", get(git_log))
+        .route("/api/git/{project}/commit/{id}", get(git_commit_detail))
+        .route("/api/git/{project}/refs", get(git_refs))
+        .route("/api/git/{project}/tree", get(git_tree))
+        .route("/api/git/{project}/file", get(git_file))
+        .route("/api/git/{project}/stage", post(git_stage))
+        .route("/api/git/{project}/unstage", post(git_unstage))
+        .route("/api/git/{project}/commit", post(git_commit))
+        .route("/api/git/{project}/switch", post(git_switch))
+        .route("/api/git/{project}/stash", post(git_stash))
+        .route("/api/git/{project}/push", post(git_push))
+        .route("/api/git/{project}/fetch", post(git_fetch))
         .route("/raw/{project}/{*path}", get(raw_asset))
         .route("/ws", get(ws_upgrade))
         .fallback_service(ServeDir::new(&ui_dir))
@@ -378,6 +392,224 @@ async fn write_doc(
     .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
     // no manual cache poke: the watcher sees the write (and the commit) and
     // pushes the ProjectChanged delta itself
+    Ok(Json(result))
+}
+
+#[derive(serde::Deserialize)]
+struct GitDiffQuery {
+    path: String,
+    #[serde(default)]
+    cached: bool,
+    rev: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct GitLogQuery {
+    #[serde(default = "default_log_limit")]
+    limit: u32,
+    #[serde(default)]
+    skip: u32,
+}
+fn default_log_limit() -> u32 {
+    50
+}
+
+#[derive(serde::Deserialize)]
+struct GitTreeQuery {
+    rev: Option<String>,
+    path: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+struct GitFileQuery {
+    path: String,
+    rev: Option<String>,
+}
+
+async fn git_status(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<prefrontal_protocol::GitStatus>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let allow_push = state.cfg.git.allow_push;
+    let status = tokio::task::spawn_blocking(move || prefrontal_core::git::status(&dir, allow_push))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(status))
+}
+
+async fn git_diff(
+    Path(project): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<GitDiffQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<prefrontal_protocol::GitDiff>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let rev = q.rev.clone();
+    let diff = tokio::task::spawn_blocking(move || {
+        prefrontal_core::git::diff(&dir, &q.path, q.cached, rev.as_deref())
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(diff))
+}
+
+async fn git_log(
+    Path(project): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<GitLogQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<prefrontal_protocol::CommitSummary>>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let log = tokio::task::spawn_blocking(move || prefrontal_core::git::log(&dir, q.limit, q.skip))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(log))
+}
+
+async fn git_commit_detail(
+    Path((project, id)): Path<(String, String)>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<prefrontal_protocol::GitCommitDetail>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let detail = tokio::task::spawn_blocking(move || prefrontal_core::git::commit_detail(&dir, &id))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(detail))
+}
+
+async fn git_refs(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<prefrontal_protocol::GitRef>>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let refs = tokio::task::spawn_blocking(move || prefrontal_core::git::refs(&dir))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(refs))
+}
+
+async fn git_tree(
+    Path(project): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<GitTreeQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<prefrontal_protocol::GitTreeEntry>>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let tree = tokio::task::spawn_blocking(move || {
+        prefrontal_core::git::tree(&dir, q.rev.as_deref(), q.path.as_deref())
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(tree))
+}
+
+async fn git_file(
+    Path(project): Path<String>,
+    axum::extract::Query(q): axum::extract::Query<GitFileQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<prefrontal_protocol::GitFile>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let file = tokio::task::spawn_blocking(move || {
+        prefrontal_core::git::file_at(&dir, q.rev.as_deref(), &q.path)
+    })
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(file))
+}
+
+async fn git_stage(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GitPaths>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::stage(&dir, &body.paths))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(result))
+}
+
+async fn git_unstage(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GitPaths>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::unstage(&dir, &body.paths))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(result))
+}
+
+async fn git_commit(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GitCommitRequest>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::commit(&dir, &body))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(result))
+}
+
+async fn git_switch(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GitSwitchRequest>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::switch(&dir, &body))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(result))
+}
+
+async fn git_stash(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(body): Json<GitStashRequest>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::stash(&dir, &body))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(result))
+}
+
+async fn git_push(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let allow = state.cfg.git.allow_push;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::push(&dir, allow))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
+    Ok(Json(result))
+}
+
+async fn git_fetch(
+    Path(project): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<prefrontal_protocol::GitOpResult>, ApiError> {
+    let dir = project_dir(&state, &project).await?;
+    let allow = state.cfg.git.allow_push;
+    let result = tokio::task::spawn_blocking(move || prefrontal_core::git::fetch(&dir, allow))
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::BAD_REQUEST, format!("{e:#}")))?;
     Ok(Json(result))
 }
 

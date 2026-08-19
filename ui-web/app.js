@@ -92,6 +92,8 @@ function renderHealth(list) {
   rows.replaceChildren();
   for (const p of flagged) {
     const row = el("div", "health-row");
+    row.title = `open ${p.name}`;
+    row.onclick = () => openPanel(p.name, { tab: "repo" });
     row.append(el("span", "name", p.name));
     for (const f of p.health) {
       const v = flagText(f);
@@ -152,6 +154,7 @@ function renderTimeline(list) {
     });
     row.append(el("span", "t", time), el("span", "msg", e.summary));
     row.title = `${e.id} — ${e.summary}`;
+    row.onclick = () => openPanel(e.project, { tab: "repo", commitId: e.id });
     block.append(row);
   }
 }
@@ -252,6 +255,8 @@ function card(p) {
     if (p.git.branch) g.append(el("span", "branch", `⎇ ${p.git.branch}`));
     if (p.git.commit_count != null) g.append(el("span", "", `${p.git.commit_count} commits`));
     if (p.git.dirty_files) g.append(el("span", "dirty", `${p.git.dirty_files} dirty`));
+    if (p.git.ahead) g.append(el("span", "ab", `↑${p.git.ahead}`));
+    if (p.git.behind) g.append(el("span", "ab", `↓${p.git.behind}`));
     c.append(g);
   }
 
@@ -345,7 +350,9 @@ function renderHits(hits) {
   list.replaceChildren();
   for (const h of hits) {
     const isDoc = h.kind === "doc";
-    const row = el("div", "hit" + (isDoc ? " openable" : ""));
+    const isCommit = h.kind === "commit";
+    const isCode = h.kind === "code" || h.kind === "symbol";
+    const row = el("div", "hit" + (isDoc || isCommit || isCode ? " openable" : ""));
     const top = el("div", "top");
     const loc =
       h.kind === "commit" ? `commit ${h.path}` : h.line ? `${h.path}:${h.line}` : h.path;
@@ -354,9 +361,15 @@ function renderHits(hits) {
     if (isDoc) {
       row.title = "open in the docs panel";
       row.onclick = async () => {
-        await openPanel(h.project);
+        await openPanel(h.project, { tab: "notes" });
         openDoc(h.path);
       };
+    } else if (isCommit) {
+      row.title = "open commit in the repo pane";
+      row.onclick = () => openPanel(h.project, { tab: "repo", commitId: h.path });
+    } else if (isCode) {
+      row.title = "open file in the repo pane";
+      row.onclick = () => openPanel(h.project, { tab: "repo", filePath: h.path, tree: true });
     }
     list.append(row);
   }
@@ -370,9 +383,20 @@ const panel = {
   openPath: null,
   raw: "",
   mode: "view", // view | edit | create
+  tab: "notes", // notes | repo
+  repoMode: "wt", // wt | files
+  git: null,
+  refs: [],
+  log: [],
+  selPath: null,
+  selCached: false,
+  selCommit: null,
+  treePath: "",
+  treeRev: "HEAD",
 };
 
 const $ = (id) => document.getElementById(id);
+const enc = encodeURIComponent;
 
 function status(msg, cls) {
   const s = $("panel-status");
@@ -385,24 +409,61 @@ function setMode(mode) {
   $("doc-view").hidden = editing;
   $("doc-editor").hidden = !editing;
   $("doc-filename").hidden = mode !== "create";
-  $("btn-edit").hidden = editing || !panel.openPath;
+  $("btn-edit").hidden = editing || !panel.openPath || panel.tab === "repo";
   $("btn-save").hidden = !editing;
   $("btn-cancel").hidden = !editing;
-  $("btn-new").hidden = editing;
-  if (editing) $(mode === "create" ? "doc-filename" : "doc-editor").focus();
+  $("btn-new").hidden = editing || panel.tab === "repo";
+  if (editing && panel.tab === "notes") $(mode === "create" ? "doc-filename" : "doc-editor").focus();
 }
 
-async function openPanel(projectName) {
+function setTab(tab) {
+  panel.tab = tab;
+  const repo = tab === "repo";
+  $("notes-body").hidden = repo;
+  $("repo-body").hidden = !repo;
+  $("notes-actions").hidden = repo;
+  $("repo-commit-bar").hidden = !repo;
+  $("tab-notes").classList.toggle("sel", !repo);
+  $("tab-repo").classList.toggle("sel", repo);
+  document.querySelector(".panel").classList.toggle("wide", repo);
+  $("repo-mode-wt").classList.toggle("sel", panel.repoMode === "wt");
+  $("repo-mode-files").classList.toggle("sel", panel.repoMode === "files");
+  $("repo-status").hidden = panel.repoMode !== "wt";
+  $("repo-tree").hidden = panel.repoMode !== "files";
+  if (repo) {
+    if (panel.mode !== "view") setMode("view");
+    loadRepo();
+  } else {
+    $("btn-new").hidden = false;
+    $("btn-edit").hidden = !panel.openPath;
+  }
+}
+
+async function openPanel(projectName, opts = {}) {
+  const prev = panel.project;
   panel.project = projectName;
   panel.openPath = null;
+  panel.selPath = opts.filePath ?? null;
+  panel.selCached = false;
+  panel.selCommit = opts.commitId ?? null;
+  panel.treePath = "";
+  panel.treeRev = "HEAD";
+  if (opts.tree && opts.filePath) {
+    panel.repoMode = "files";
+    const slash = opts.filePath.lastIndexOf("/");
+    panel.treePath = slash >= 0 ? opts.filePath.slice(0, slash) : "";
+  } else if (opts.tab !== "repo" || prev !== projectName) {
+    panel.repoMode = "wt";
+  }
   $("panel-title").textContent = projectName;
   $("panel-path").textContent = "";
   $("doc-view").replaceChildren();
+  $("repo-view").textContent = "";
   status("");
   setMode("view");
   $("overlay").hidden = false;
   try {
-    const res = await fetch(`/api/docs/${encodeURIComponent(projectName)}`);
+    const res = await fetch(`/api/docs/${enc(projectName)}`);
     panel.docs = res.ok ? await res.json() : [];
   } catch {
     panel.docs = [];
@@ -413,6 +474,10 @@ async function openPanel(projectName) {
   } else {
     $("doc-view").replaceChildren(el("div", "empty", "no docs here yet — start one with ＋ note"));
   }
+  const proj = projects.find((p) => p.name === projectName);
+  const dirty = (proj?.git?.dirty_files ?? 0) > 0;
+  const wantRepo = opts.tab === "repo" || (!opts.tab && dirty);
+  setTab(wantRepo ? "repo" : "notes");
 }
 
 function renderDocList() {
@@ -538,6 +603,309 @@ function closePanel() {
   panel.project = null;
 }
 
+let repoSeq = 0;
+
+function changeLetter(ch) {
+  if (ch === "none") return "";
+  if (ch === "modified") return "M";
+  if (ch === "added") return "A";
+  if (ch === "deleted") return "D";
+  if (ch === "renamed") return "R";
+  if (ch === "copied") return "C";
+  if (ch === "type_changed") return "T";
+  if (ch === "untracked") return "?";
+  if (ch === "unmerged") return "U";
+  return ch.slice(0, 1).toUpperCase();
+}
+
+function entryMark(e) {
+  if (e.conflicted) return { t: "UU", cls: "conflict" };
+  if (e.worktree === "untracked") return { t: "??", cls: "untracked" };
+  const i = changeLetter(e.index);
+  const w = changeLetter(e.worktree);
+  if (i && w) return { t: i + w, cls: "unstaged" };
+  if (i) return { t: i + ".", cls: "staged" };
+  if (w) return { t: "." + w, cls: "unstaged" };
+  return { t: "··", cls: "" };
+}
+
+async function loadRepo() {
+  if (!panel.project) return;
+  const seq = ++repoSeq;
+  try {
+    const p = enc(panel.project);
+    const [stRes, refsRes, logRes] = await Promise.all([
+      fetch(`/api/git/${p}/status`),
+      fetch(`/api/git/${p}/refs`),
+      fetch(`/api/git/${p}/log?limit=40`),
+    ]);
+    if (seq !== repoSeq) return;
+    if (!stRes.ok) {
+      status(await stRes.text(), "warn");
+      return;
+    }
+    panel.git = await stRes.json();
+    panel.refs = refsRes.ok ? await refsRes.json() : [];
+    panel.log = logRes.ok ? await logRes.json() : [];
+    const allow = Boolean(panel.git.allow_push);
+    $("btn-repo-push").disabled = !allow;
+    $("btn-repo-fetch").disabled = !allow;
+    const tip = allow ? "push to upstream" : "enable [git] allow_push in ~/.config/prefrontal/config.toml";
+    $("btn-repo-push").title = tip;
+    $("btn-repo-fetch").title = allow ? "fetch from remotes" : tip;
+    renderRepoChrome();
+    if (panel.repoMode === "files") await renderTree();
+    else renderStatusList();
+    if (panel.selCommit) await openCommit(panel.selCommit);
+    else if (panel.selPath && panel.repoMode === "files") await openRepoFile(panel.selPath, panel.treeRev);
+    else if (panel.selPath) await openDiff(panel.selPath, panel.selCached);
+  } catch {
+    status("daemon unreachable", "warn");
+  }
+}
+
+function renderRepoChrome() {
+  const g = panel.git;
+  const banner = $("repo-banner");
+  if (g?.rebasing) {
+    banner.hidden = false;
+    banner.textContent = "rebase in progress — resolve in your editor";
+  } else if (g?.merging) {
+    banner.hidden = false;
+    banner.textContent = "merge in progress — resolve in your editor";
+  } else {
+    banner.hidden = true;
+    banner.textContent = "";
+  }
+
+  const wrap = $("repo-branches");
+  wrap.replaceChildren(el("div", "repo-h", "branches"));
+  if (g) {
+    const bits = [];
+    if (g.detached) bits.push("detached");
+    else if (g.branch) bits.push(g.branch);
+    if (g.upstream) bits.push(g.upstream);
+    if (g.ahead) bits.push(`↑${g.ahead}`);
+    if (g.behind) bits.push(`↓${g.behind}`);
+    if (bits.length) wrap.append(el("div", "repo-ab", bits.join(" · ")));
+  }
+  for (const r of (panel.refs || []).filter((x) => x.kind === "local")) {
+    const row = el("button", "repo-row" + (r.current ? " sel" : ""));
+    row.type = "button";
+    row.append(el("span", "nm", `${r.current ? "●" : "○"} ${r.name}`));
+    row.onclick = () => {
+      if (!r.current) gitOp("switch", { name: r.name, create: false });
+    };
+    wrap.append(row);
+  }
+  const add = el("button", "repo-row");
+  add.type = "button";
+  add.append(el("span", "nm", "＋ new branch"));
+  add.onclick = () => {
+    const name = window.prompt("new branch name");
+    if (name && name.trim()) gitOp("switch", { name: name.trim(), create: true });
+  };
+  wrap.append(add);
+}
+
+function renderStatusList() {
+  const list = $("repo-status");
+  list.replaceChildren();
+  const entries = panel.git?.entries ?? [];
+  const groups = [
+    ["conflicted", entries.filter((e) => e.conflicted)],
+    ["staged", entries.filter((e) => !e.conflicted && e.index !== "none")],
+    ["unstaged", entries.filter((e) => !e.conflicted && e.worktree !== "none" && e.worktree !== "untracked")],
+    ["untracked", entries.filter((e) => e.worktree === "untracked")],
+  ];
+  for (const [title, rows] of groups) {
+    if (!rows.length) continue;
+    list.append(el("div", "repo-h", `${title} (${rows.length})`));
+    for (const e of rows) {
+      const mark = entryMark(e);
+      const row = el("button", "repo-row" + (panel.selPath === e.path && !panel.selCommit ? " sel" : ""));
+      row.type = "button";
+      row.append(el("span", `mark ${mark.cls}`, mark.t), el("span", "nm", e.path));
+      row.title = e.path;
+      row.onclick = () => openDiff(e.path, e.index !== "none" && e.worktree === "none");
+      const act = el("span", "act", e.index !== "none" && e.worktree === "none" ? "unstage" : "stage");
+      act.onclick = (ev) => {
+        ev.stopPropagation();
+        gitOp(e.index !== "none" && e.worktree === "none" ? "unstage" : "stage", { paths: [e.path] });
+      };
+      row.append(act);
+      list.append(row);
+    }
+  }
+  if ((panel.git?.stashes ?? []).length) {
+    list.append(el("div", "repo-h", `stash (${panel.git.stashes.length})`));
+    for (const s of panel.git.stashes) {
+      list.append(el("div", "repo-ab", `stash@{${s.index}} ${s.message}`));
+    }
+    const pop = el("button", "repo-row");
+    pop.type = "button";
+    pop.append(el("span", "nm", "pop stash"));
+    pop.onclick = () => gitOp("stash", { action: "pop" });
+    list.append(pop);
+  }
+  if (panel.log.length) {
+    list.append(el("div", "repo-h", "history"));
+    for (const c of panel.log) {
+      const row = el("button", "repo-row" + (panel.selCommit === c.id ? " sel" : ""));
+      row.type = "button";
+      row.append(el("span", "mark", c.id.slice(0, 7)), el("span", "nm", c.summary));
+      row.title = `${c.id} — ${c.summary}`;
+      row.onclick = () => openCommit(c.id);
+      list.append(row);
+    }
+  }
+  if (!entries.length && !panel.log.length) {
+    list.append(el("div", "none", "clean working tree"));
+  }
+}
+
+async function renderTree() {
+  const list = $("repo-tree");
+  list.replaceChildren(el("div", "repo-h", panel.treePath || "/"));
+  try {
+    const q = new URLSearchParams();
+    if (panel.treeRev) q.set("rev", panel.treeRev);
+    if (panel.treePath) q.set("path", panel.treePath);
+    const res = await fetch(`/api/git/${enc(panel.project)}/tree?${q}`);
+    if (!res.ok) {
+      list.append(el("div", "none", await res.text()));
+      return;
+    }
+    const entries = await res.json();
+    if (panel.treePath) {
+      const up = el("button", "repo-row");
+      up.type = "button";
+      up.append(el("span", "nm", ".."));
+      up.onclick = () => {
+        const slash = panel.treePath.lastIndexOf("/");
+        panel.treePath = slash >= 0 ? panel.treePath.slice(0, slash) : "";
+        renderTree();
+      };
+      list.append(up);
+    }
+    for (const e of entries) {
+      const name = e.path.includes("/") ? e.path.slice(e.path.lastIndexOf("/") + 1) : e.path;
+      const row = el("button", "repo-row" + (panel.selPath === e.path ? " sel" : ""));
+      row.type = "button";
+      row.append(el("span", "mark", e.kind === "dir" ? "▸" : "·"), el("span", "nm", name));
+      row.onclick = () => {
+        if (e.kind === "dir") {
+          panel.treePath = e.path;
+          renderTree();
+        } else {
+          panel.selPath = e.path;
+          openRepoFile(e.path, panel.treeRev);
+          renderTree();
+        }
+      };
+      list.append(row);
+    }
+  } catch {
+    list.append(el("div", "none", "could not list tree"));
+  }
+}
+
+async function openDiff(path, cached) {
+  panel.selPath = path;
+  panel.selCached = cached;
+  panel.selCommit = null;
+  $("panel-path").textContent = path + (cached ? " (staged)" : "");
+  const q = new URLSearchParams({ path });
+  if (cached) q.set("cached", "true");
+  try {
+    const res = await fetch(`/api/git/${enc(panel.project)}/diff?${q}`);
+    const pre = $("repo-view");
+    pre.className = "diff";
+    if (!res.ok) {
+      pre.textContent = await res.text();
+      return;
+    }
+    const d = await res.json();
+    if (d.binary) pre.textContent = "(binary file)";
+    else pre.textContent = d.patch || "(no textual diff)";
+    if (d.truncated) pre.textContent += "\n\n… truncated";
+    renderStatusList();
+  } catch {
+    status("daemon unreachable", "warn");
+  }
+}
+
+async function openCommit(id) {
+  panel.selCommit = id;
+  panel.selPath = null;
+  try {
+    const res = await fetch(`/api/git/${enc(panel.project)}/commit/${enc(id)}`);
+    const pre = $("repo-view");
+    pre.className = "source";
+    if (!res.ok) {
+      pre.textContent = await res.text();
+      return;
+    }
+    const c = await res.json();
+    $("panel-path").textContent = c.short_id;
+    const lines = [
+      `${c.short_id}  ${c.summary}`,
+      `${c.author} <${c.author_email}>`,
+      "",
+    ];
+    if (c.body) lines.push(c.body, "");
+    for (const f of c.files) lines.push(`${changeLetter(f.status) || " "}  ${f.path}`);
+    pre.textContent = lines.join("\n");
+    renderStatusList();
+  } catch {
+    status("daemon unreachable", "warn");
+  }
+}
+
+async function openRepoFile(path, rev) {
+  panel.selPath = path;
+  panel.selCommit = null;
+  $("panel-path").textContent = path;
+  const q = new URLSearchParams({ path });
+  if (rev) q.set("rev", rev);
+  try {
+    const res = await fetch(`/api/git/${enc(panel.project)}/file?${q}`);
+    const pre = $("repo-view");
+    pre.className = "source";
+    if (!res.ok) {
+      pre.textContent = await res.text();
+      return;
+    }
+    const f = await res.json();
+    if (f.binary) pre.textContent = "(binary file)";
+    else pre.textContent = f.text || "(empty)";
+    if (f.truncated) pre.textContent += "\n\n… truncated";
+  } catch {
+    status("daemon unreachable", "warn");
+  }
+}
+
+async function gitOp(verb, body) {
+  status(`${verb}…`);
+  try {
+    const res = await fetch(`/api/git/${enc(panel.project)}/${verb}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body ?? {}),
+    });
+    const r = res.ok ? await res.json() : { ok: false, detail: await res.text() };
+    if (!r.ok) {
+      status(r.detail || `${verb} failed`, "warn");
+    } else {
+      status(r.commit_id ? `${verb} · ${r.commit_id}` : `${verb} ok`, "ok");
+      if (verb === "commit") $("repo-msg").value = "";
+    }
+    await loadRepo();
+  } catch {
+    status(`${verb} failed — daemon unreachable`, "warn");
+  }
+}
+
 function bindPanel() {
   $("btn-close").onclick = closePanel;
   $("overlay").onclick = (e) => {
@@ -562,10 +930,30 @@ function bindPanel() {
     $("doc-filename").select();
   };
   $("btn-save").onclick = saveDoc;
+  $("tab-notes").onclick = () => setTab("notes");
+  $("tab-repo").onclick = () => setTab("repo");
+  $("repo-mode-wt").onclick = () => {
+    panel.repoMode = "wt";
+    setTab("repo");
+  };
+  $("repo-mode-files").onclick = () => {
+    panel.repoMode = "files";
+    setTab("repo");
+  };
+  $("btn-repo-commit").onclick = () => {
+    const message = $("repo-msg").value;
+    gitOp("commit", { message });
+  };
+  $("btn-repo-stash").onclick = () => {
+    const message = $("repo-msg").value.trim();
+    gitOp("stash", { action: "push", message: message || null });
+  };
+  $("btn-repo-push").onclick = () => gitOp("push", {});
+  $("btn-repo-fetch").onclick = () => gitOp("fetch", {});
   document.addEventListener("keydown", (e) => {
     if ($("overlay").hidden) return;
     if (e.key === "Escape") closePanel();
-    if ((e.ctrlKey || e.metaKey) && e.key === "s" && panel.mode !== "view") {
+    if ((e.ctrlKey || e.metaKey) && e.key === "s" && panel.mode !== "view" && panel.tab === "notes") {
       e.preventDefault();
       saveDoc();
     }
@@ -630,6 +1018,14 @@ function handleEvent(ev) {
     projects = projects.filter((p) => p.path !== ev.path);
   }
   render();
+  if (
+    ev.type === "project_changed" &&
+    panel.project &&
+    ev.project.name === panel.project &&
+    panel.tab === "repo"
+  ) {
+    loadRepo();
+  }
 }
 
 function connectWS() {

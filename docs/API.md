@@ -34,6 +34,8 @@ watcher keeps it current; no scan happens per request).
     "dirty_files": 0,
     "commit_count": 45,
     "remote": "git@github.com:you/Occipital-RS.git",
+    "ahead": 0,
+    "behind": 0,
     "recent_commits": [ { "id": "9cf767e6", "summary": "…", "time_unix": 0 } ]
   },
   "tagline": "The agent's reading cortex…",
@@ -126,6 +128,31 @@ Path rules (all doc/raw routes): relative, no `..`, extension allow-listed,
 symlink-escape checked. Projects are addressed by name and resolved only
 through the daemon's own scan — clients never send filesystem paths.
 
+### Working tree (phase 7)
+
+Local git. Reads never leave the machine. Writes are allowlisted porcelain
+(stage / unstage / commit / switch / stash). **Push and Fetch** refuse unless
+`[git] allow_push = true`. Never `--force`. CLI/MCP expose **reads only**.
+
+| Route | Returns |
+|---|---|
+| `GET /api/git/{project}/status` | `GitStatus` — paths, staged/unstaged/untracked, ahead/behind, stashes, `allow_push` |
+| `GET /api/git/{project}/diff?path=&cached=&rev=` | `GitDiff` — unified patch, size-capped |
+| `GET /api/git/{project}/log?limit=&skip=` | `CommitSummary[]` |
+| `GET /api/git/{project}/commit/{id}` | `GitCommitDetail` — author, body, files |
+| `GET /api/git/{project}/refs` | `GitRef[]` — local / remote / tag |
+| `GET /api/git/{project}/tree?rev=&path=` | `GitTreeEntry[]` |
+| `GET /api/git/{project}/file?path=&rev=` | `GitFile` — `rev=WORKTREE` reads the disk |
+| `POST /api/git/{project}/stage` body `{"paths":[…]}` | `GitOpResult` |
+| `POST /api/git/{project}/unstage` body `{"paths":[…]}` | `GitOpResult` |
+| `POST /api/git/{project}/commit` body `{"message":"…","paths":[…]?}` | `GitOpResult` |
+| `POST /api/git/{project}/switch` body `{"name":"…","create":false}` | `GitOpResult` |
+| `POST /api/git/{project}/stash` body `{"action":"push"|"pop","message":?}` | `GitOpResult` |
+| `POST /api/git/{project}/push` | `GitOpResult` — gated by `allow_push` |
+| `POST /api/git/{project}/fetch` | `GitOpResult` — same gate |
+
+Git pathspecs: relative, no `..`, no magic `:(` / `:!` / globs. Never `git add -A`.
+
 ---
 
 ## WebSocket — `GET /ws`
@@ -182,6 +209,12 @@ claude mcp add prefrontal -- /path/to/prefrontal mcp
 | `read_doc` | `project`, `path` | raw markdown |
 | `write_doc` | `project`, `path`, `content` | write + local auto-commit result |
 | `colony_status` | — | -RS siblings: installed / live / how to reach |
+| `git_status` | `project` | working-tree paths + ahead/behind (read-only) |
+| `git_diff` | `project`, `path`, `cached?`, `rev?` | unified patch |
+| `git_log` | `project`, `limit?`, `skip?` | recent commits |
+| `git_show` | `project`, `id` | commit detail |
+| `git_tree` | `project`, `rev?`, `path?` | directory at a revision |
+| `git_file` | `project`, `path`, `rev?` | file at a revision |
 
 Tool failures come back as MCP `isError` results with a helpful message;
 JSON-RPC errors are reserved for protocol breakage.
@@ -199,6 +232,12 @@ prefrontal colony [--json]   # -RS siblings: installed / live / reach
 prefrontal recall <words…>   # semantic (needs features.cerebro)
 prefrontal cortex-sync       # upsert project summaries into the cortex
 prefrontal mcp               # serve MCP on stdio
+prefrontal git status <proj> # working-tree paths
+prefrontal git diff <proj> <path> [--cached] [--rev]
+prefrontal git log <proj>
+prefrontal git show <proj> <id>
+prefrontal git tree <proj> [--rev] [path]
+prefrontal git file <proj> <path> [--rev]
 ```
 
 The CLI scans directly — it works with the daemon stopped (search reads the
@@ -214,7 +253,7 @@ Highlights: `roots` (scan targets), `[thresholds]` (activity + dirty-pile),
 `[timeline]` (window/cap), `[overrides.<name>]` (pin status, tags, hide),
 `features.cerebro` + `[cortex]` (semantic layer), `[colony]` (panel on/off,
 probe interval, per-sibling port overrides — ports only; probe hosts are
-hard-wired to loopback).
+hard-wired to loopback), `[git] allow_push` (Fetch/Push; default off).
 
 The search index lives at `~/.local/share/prefrontal/index` and is a cache:
 schema changes wipe and rebuild it automatically.
